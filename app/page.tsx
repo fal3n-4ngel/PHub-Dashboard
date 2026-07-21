@@ -370,20 +370,7 @@ export default function Dashboard() {
     if (saved) {
       setCurrency(saved);
     } else {
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-        if (tz.includes("Kolkata") || tz.includes("India")) {
-          setCurrency("₹");
-        } else if (tz.includes("Europe")) {
-          setCurrency("€");
-        } else if (tz.includes("London") || tz.includes("GB")) {
-          setCurrency("£");
-        } else {
-          setCurrency("$");
-        }
-      } catch {
-        setCurrency("$");
-      }
+      setCurrency("₹");
     }
   }, []);
 
