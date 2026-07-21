@@ -645,6 +645,23 @@ export async function deleteSubscription(session: Session, id: string) {
   return { id };
 }
 
+export async function updateSubscription(session: Session, id: string, updates: Partial<SubscriptionRecord>) {
+  assertDocId(id, "subscription");
+  const docData = { ...updates };
+  
+  const params = new URLSearchParams();
+  Object.keys(updates).forEach((k) => {
+    params.append("updateMask.fieldPaths", k);
+  });
+
+  await fsFetch(session, `${docsRoot(session)}/subscriptions/${id}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+}
+
 // Single doc per user (notes/{userId}), mirroring the watchlist doc shape —
 // ownership is enforced by the security rules matching the doc id to auth.uid.
 export async function getNote(session: Session): Promise<NoteRecord | null> {

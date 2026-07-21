@@ -109,6 +109,30 @@ interface SearchResult {
   traktId?: number | null;
 }
 
+function getNextFutureBillingDate(dateStr: string, cycle: string): string {
+  if (!dateStr) return "";
+  try {
+    let date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (isNaN(date.getTime())) return dateStr;
+    while (date < today) {
+      if (cycle === "monthly") {
+        date.setMonth(date.getMonth() + 1);
+      } else if (cycle === "yearly") {
+        date.setFullYear(date.getFullYear() + 1);
+      } else if (cycle === "weekly") {
+        date.setDate(date.getDate() + 7);
+      } else {
+        break;
+      }
+    }
+    return date.toISOString().slice(0, 10);
+  } catch {
+    return dateStr;
+  }
+}
+
 /* ─── AniList GraphQL helper ─── */
 const ANILIST_GQL = "https://graphql.anilist.co";
 
@@ -249,6 +273,22 @@ export default function Dashboard() {
   const [isAddingExpense, setIsAddingExpense] = useState(false);
   const [isFetchingExpenses, setIsFetchingExpenses] = useState(false);
   const [expenseTab, setExpenseTab] = useState<"ledger"|"subscriptions">("ledger");
+
+  /* ─── Custom Confirm Dialog State ─── */
+  const [confirmDlg, setConfirmDlg] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    isDestructive?: boolean;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
 
   /* ─── Watchlist State ─── */
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
@@ -438,6 +478,28 @@ export default function Dashboard() {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${user?.idToken || ""}`,
   }), [user]);
+
+  const triggerConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDestructive = true,
+    confirmText = "Delete",
+    cancelText = "Cancel"
+  ) => {
+    setConfirmDlg({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDlg(prev => ({ ...prev, isOpen: false }));
+      },
+      confirmText,
+      cancelText,
+      isDestructive,
+    });
+  };
 
   /* ─── AniList helpers ─── */
   async function loadAnilistUser(token: string) {
@@ -788,9 +850,10 @@ export default function Dashboard() {
   };
 
   const archiveExpenseItem = async (id: string) => {
-    if (!confirm("Archive this expense?")) return;
-    const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", headers: getHeaders() });
-    if (res.ok) setExpenses((prev) => prev.filter((e) => e.id !== id));
+    triggerConfirm("Archive Expense", "Are you sure you want to archive this expense?", async () => {
+      const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setExpenses((prev) => prev.filter((e) => e.id !== id));
+    }, true, "Archive");
   };
 
   const addSubscription = async (e: React.FormEvent) => {
@@ -810,9 +873,10 @@ export default function Dashboard() {
   };
 
   const deleteSubscription = async (id: string) => {
-    if (!confirm("Delete this subscription?")) return;
-    const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE", headers: getHeaders() });
-    if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    triggerConfirm("Delete Subscription", "Are you sure you want to delete this subscription?", async () => {
+      const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    }, true, "Delete");
   };
 
 
@@ -919,10 +983,11 @@ export default function Dashboard() {
   };
 
   const deleteInvestment = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this asset?")) return;
-    const updatedList = investments.filter((a) => a.id !== id);
-    setInvestments(updatedList);
-    await saveInvestments(updatedList);
+    triggerConfirm("Delete Asset", "Are you sure you want to delete this asset from your portfolio?", async () => {
+      const updatedList = investments.filter((a) => a.id !== id);
+      setInvestments(updatedList);
+      await saveInvestments(updatedList);
+    });
   };
 
   const updateMarketPrices = async () => {
@@ -991,12 +1056,27 @@ export default function Dashboard() {
     finally { setIsFetchingWatchlist(false); }
   };
 
-  /* ─── New Features API ─── */
   const fetchSubscriptions = async () => {
     setIsFetchingSubscriptions(true);
     try {
       const res = await fetch("/api/subscriptions", { headers: getHeaders() });
-      if (res.ok) setSubscriptions(await res.json());
+      if (res.ok) {
+        const loaded = await res.json() as any[];
+        const rolled = loaded.map(sub => {
+          const futureDate = getNextFutureBillingDate(sub.nextBillingDate, sub.billingCycle);
+          if (futureDate !== sub.nextBillingDate) {
+            // Trigger background PATCH update
+            fetch(`/api/subscriptions/${sub.id}`, {
+              method: "PATCH",
+              headers: getHeaders(),
+              body: JSON.stringify({ nextBillingDate: futureDate }),
+            }).catch(err => console.error("Auto roll-over update failed:", err));
+            return { ...sub, nextBillingDate: futureDate };
+          }
+          return sub;
+        });
+        setSubscriptions(rolled);
+      }
     } catch (err) { console.error(err); }
     finally { setIsFetchingSubscriptions(false); }
   };
@@ -1044,9 +1124,10 @@ export default function Dashboard() {
   };
 
   const deleteWatchItem = async (id: string) => {
-    if (!confirm("Delete this watchlist item?")) return;
-    const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE", headers: getHeaders() });
-    if (res.ok) setWatchlist((prev) => prev.filter((w) => w.id !== id));
+    triggerConfirm("Delete Watchlist Item", "Are you sure you want to remove this item from your watchlist?", async () => {
+      const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setWatchlist((prev) => prev.filter((w) => w.id !== id));
+    });
   };
 
   /* ─── Media Search ─── */
@@ -2288,74 +2369,186 @@ export default function Dashboard() {
         {/* ─── SUBSCRIPTIONS TAB ─── */}
         {activeTab === "expenses" && expenseTab === "subscriptions" && (
           <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            <h1 style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "-0.5px" }}>Subscriptions</h1>
-            
-            <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "24px" }}>
-              <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px" }}>
-                <div>
-                  <p style={{ fontSize: "12px", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Monthly Burn Rate</p>
-                  <p style={{ fontSize: "32px", fontWeight: 700, color: "var(--text-primary)", marginTop: "4px" }}>
-                    ${subscriptions.reduce((acc, sub) => acc + (sub.billingCycle === "yearly" ? sub.cost / 12 : sub.cost), 0).toFixed(2)}
-                  </p>
-                </div>
-                <div style={{ width: "48px", height: "48px", borderRadius: "12px", backgroundColor: "var(--accent-expense)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="8" x2="22" y2="8"/><line x1="2" y1="16" x2="22" y2="16"/></svg>
-                </div>
-              </div>
 
-              <div className="card" style={{ padding: "20px" }}>
-                <h2 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "16px" }}>Add Subscription</h2>
-                <form onSubmit={addSubscription} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <input type="text" placeholder="Name (e.g. Netflix)" value={subName} onChange={(e) => setSubName(e.target.value)} required style={{ flex: 1 }} />
-                    <input type="text" placeholder="Icon (e.g. 🍿)" value={subIcon} onChange={(e) => setSubIcon(e.target.value)} style={{ width: "60px" }} />
-                  </div>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <input type="number" placeholder="Cost ($)" value={subCost} onChange={(e) => setSubCost(e.target.value)} required step="0.01" style={{ flex: 1 }} />
-                    <select value={subCycle} onChange={(e) => setSubCycle(e.target.value as "monthly" | "yearly")} style={{ flex: 1 }}>
-                      <option value="monthly">Monthly</option>
-                      <option value="yearly">Yearly</option>
-                    </select>
-                  </div>
-                  <input type="date" placeholder="Next Billing Date" value={subNextDate} onChange={(e) => setSubNextDate(e.target.value)} required />
-                  <button type="submit" disabled={isAddingSub} className="btn-primary" style={{ marginTop: "4px" }}>
-                    {isAddingSub ? "Adding..." : "Add Subscription"}
-                  </button>
-                </form>
+            {/* Stat row */}
+            <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
+              <div className="stat-card">
+                <span className="label-mono">Monthly Burn</span>
+                <span className="stat-value" style={{ color: "var(--accent-expense)" }}>
+                  {currency}{subscriptions.reduce((acc, sub) => acc + (sub.billingCycle === "yearly" ? sub.cost / 12 : sub.cost), 0).toFixed(0)}
+                </span>
+                <span className="stat-subtext">per month (normalised)</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">Yearly Total</span>
+                <span className="stat-value">
+                  {currency}{subscriptions.reduce((acc, sub) => acc + (sub.billingCycle === "yearly" ? sub.cost : sub.cost * 12), 0).toFixed(0)}
+                </span>
+                <span className="stat-subtext">annual commitment</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">Active Plans</span>
+                <span className="stat-value">{subscriptions.length}</span>
+                <span className="stat-subtext">subscriptions tracked</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">Next Due</span>
+                <span className="stat-value" style={{ fontSize: "18px", marginTop: "8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {(() => {
+                    if (subscriptions.length === 0) return "—";
+                    const next = subscriptions.slice().sort((a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime())[0];
+                    return next?.name ?? "—";
+                  })()}
+                </span>
+                <span className="stat-subtext">
+                  {(() => {
+                    if (subscriptions.length === 0) return "";
+                    const next = subscriptions.slice().sort((a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime())[0];
+                    if (!next) return "";
+                    const d = Math.ceil((new Date(next.nextBillingDate).getTime() - Date.now()) / 86400000);
+                    return d === 0 ? "due today" : `in ${d} day${d === 1 ? "" : "s"}`;
+                  })()}
+                </span>
               </div>
             </div>
 
-            <div className="card" style={{ padding: "20px" }}>
-              <h2 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "16px" }}>Active Subscriptions</h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {subscriptions.map(sub => (
-                  <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px", backgroundColor: "var(--bg-body)", borderRadius: "12px" }}>
-                    <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
-                      <div style={{ width: "42px", height: "42px", borderRadius: "10px", backgroundColor: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>
-                        {sub.icon || "💳"}
+            {/* Add form */}
+            <div className="bento-card">
+              <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Add Subscription</span>
+              <form onSubmit={addSubscription} style={{ display: "grid", gridTemplateColumns: "1fr 70px 1fr 1fr 1fr auto", gap: "9px", alignItems: "end" }}>
+                <input type="text" placeholder="Name (e.g. Netflix)" value={subName} onChange={(e) => setSubName(e.target.value)} required />
+                <input type="text" placeholder="🍿" value={subIcon} onChange={(e) => setSubIcon(e.target.value)} style={{ textAlign: "center" }} />
+                <input type="number" placeholder={`Amount (${currency})`} value={subCost} onChange={(e) => setSubCost(e.target.value)} required step="0.01" />
+                <select value={subCycle} onChange={(e) => setSubCycle(e.target.value as "monthly" | "yearly")}>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+                <input type="date" value={subNextDate} onChange={(e) => setSubNextDate(e.target.value)} required />
+                <button type="submit" disabled={isAddingSub} className="btn-primary" style={{ whiteSpace: "nowrap" }}>
+                  {isAddingSub ? "Adding..." : "+ Add"}
+                </button>
+              </form>
+            </div>
+
+            {/* List + chart */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "24px", alignItems: "start" }}>
+
+              {/* Subscriptions list */}
+              <div className="bento-card" style={{ padding: "24px" }}>
+                <span className="label-mono" style={{ marginBottom: "16px", display: "block" }}>
+                  Active Subscriptions
+                  <span style={{ marginLeft: "8px", fontSize: "11px", fontWeight: 500, color: "var(--text-muted)", backgroundColor: "var(--bg-secondary)", padding: "2px 7px", borderRadius: "99px" }}>
+                    {subscriptions.length}
+                  </span>
+                </span>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {subscriptions.length === 0 && isFetchingSubscriptions && (
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>Loading…</p>
+                  )}
+                  {subscriptions.length === 0 && !isFetchingSubscriptions && (
+                    <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>No subscriptions added yet.</p>
+                  )}
+                  {subscriptions.map(sub => {
+                    const nextDate = new Date(sub.nextBillingDate);
+                    const daysUntil = Math.ceil((nextDate.getTime() - Date.now()) / 86400000);
+                    const isDueSoon = daysUntil <= 7 && daysUntil >= 0;
+                    return (
+                      <div key={sub.id}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--bg-secondary)", borderRadius: "10px", border: "1px solid var(--border-subtle)", transition: "background 0.15s" }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--bg-body)")}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "var(--bg-secondary)")}
+                      >
+                        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                          <div style={{ width: "38px", height: "38px", borderRadius: "9px", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "17px", flexShrink: 0 }}>
+                            {sub.icon || "💳"}
+                          </div>
+                          <div>
+                            <p style={{ fontWeight: 600, fontSize: "13px" }}>{sub.name}</p>
+                            <p style={{ fontSize: "11px", color: isDueSoon ? "#b3666b" : "var(--text-muted)", marginTop: "2px", fontWeight: isDueSoon ? 600 : 400 }}>
+                              {isDueSoon ? `⚡ Due in ${daysUntil}d` : `Next: ${sub.nextBillingDate}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+                          <div style={{ textAlign: "right" }}>
+                            <p style={{ fontWeight: 700, fontSize: "13px" }}>{currency}{sub.cost.toFixed(2)}</p>
+                            <p style={{ fontSize: "10px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.4px" }}>{sub.billingCycle}</p>
+                          </div>
+                          <button
+                            onClick={() => deleteSubscription(sub.id)}
+                            style={{ backgroundColor: "transparent", color: "var(--text-muted)", padding: "4px", borderRadius: "6px", transition: "color 0.15s" }}
+                            onMouseEnter={e => (e.currentTarget.style.color = "#b3666b")}
+                            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <p style={{ fontWeight: 600, fontSize: "15px" }}>{sub.name}</p>
-                        <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>Next: {sub.nextBillingDate}</p>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Donut chart */}
+              {subscriptions.length > 0 && (() => {
+                const COLORS = ["#b3666b","#e39282","#6366f1","#f59e0b","#10b981","#3b82f6","#8b5cf6","#14b8a6"];
+                const monthlyAmounts = subscriptions.map(s => s.billingCycle === "yearly" ? s.cost / 12 : s.cost);
+                const totalMonthly = monthlyAmounts.reduce((a, b) => a + b, 0);
+                const r = 72, cx = 100, cy = 100, strokeW = 20;
+                const circ = 2 * Math.PI * r;
+                let offset = 0;
+                const segments = subscriptions.map((sub, i) => {
+                  const pct = monthlyAmounts[i] / totalMonthly;
+                  const dash = pct * circ;
+                  const seg = { sub, color: COLORS[i % COLORS.length], dash, offset, pct, monthly: monthlyAmounts[i] };
+                  offset += dash;
+                  return seg;
+                });
+                return (
+                  <div className="bento-card" style={{ padding: "24px" }}>
+                    <span className="label-mono" style={{ marginBottom: "16px", display: "block" }}>Monthly Split</span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
+                      <div style={{ position: "relative", width: "190px", height: "190px" }}>
+                        <svg viewBox="0 0 200 200" width="190" height="190" style={{ transform: "rotate(-90deg)" }}>
+                          <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--bg-secondary)" strokeWidth={strokeW} />
+                          {segments.map((seg, i) => (
+                            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+                              stroke={seg.color} strokeWidth={strokeW}
+                              strokeDasharray={`${Math.max(seg.dash - 3, 0)} ${circ - Math.max(seg.dash - 3, 0)}`}
+                              strokeDashoffset={-seg.offset}
+                              style={{ transition: "stroke-dasharray 0.5s ease" }}
+                            />
+                          ))}
+                        </svg>
+                        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                          <p style={{ fontSize: "10px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.5px" }}>Monthly</p>
+                          <p style={{ fontSize: "20px", fontWeight: 700, marginTop: "3px", color: "var(--text-primary)" }}>{currency}{totalMonthly.toFixed(0)}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-                      <div style={{ textAlign: "right" }}>
-                        <p style={{ fontWeight: 700, fontSize: "15px" }}>{currency}{sub.cost.toFixed(2)}</p>
-                        <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>{sub.billingCycle}</p>
+                      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {segments.map((seg, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: seg.color, flexShrink: 0 }} />
+                              <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}>{seg.sub.name}</span>
+                            </div>
+                            <span style={{ fontSize: "11px", fontFamily: "monospace", color: "var(--text-muted)", fontWeight: 600 }}>
+                              {(seg.pct * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                      <button onClick={() => deleteSubscription(sub.id)} style={{ backgroundColor: "transparent", color: "#ef4444", padding: "4px" }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </button>
                     </div>
                   </div>
-                ))}
-                {isFetchingSubscriptions && subscriptions.length === 0 && <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>Loading subscriptions...</p>}
-                {!isFetchingSubscriptions && subscriptions.length === 0 && <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>No subscriptions added.</p>}
-              </div>
+                );
+              })()}
             </div>
           </div>
         )}
+
+
+
 
 
         {/* ─── BOOKS TAB ─── */}
