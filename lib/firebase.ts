@@ -1,0 +1,575 @@
+import { randomUUID } from "crypto";
+import { Session } from "./auth";
+import { ApiError } from "./errors";
+import { cacheGet, cacheSet, cacheInvalidate } from "./cache";
+
+export interface ExpenseEntry {
+  title: string;
+  amount: number;
+  category?: string;
+  date?: string; // YYYY-MM-DD
+  notes?: string;
+}
+
+export interface ExpenseRecord {
+  id: string;
+  title: string;
+  amount: number | null;
+  category: string | null;
+  date: string | null;
+  notes: string | null;
+  createdAt: number;
+}
+
+export interface WatchlistItem {
+  id?: string;
+  title: string;
+  type: "movie" | "show" | "anime";
+  status: "plan_to_watch" | "watching" | "completed" | "dropped";
+  progress: number;
+  totalEpisodes: number | null;
+  rating: number | null;
+  coverImage: string | null;
+  year: number | null;
+  updatedAt: number;
+  anilistId?: number | null;
+  traktId?: number | null;
+}
+
+export interface SyncEntry {
+  title: string;
+  type: WatchlistItem["type"];
+  status: WatchlistItem["status"];
+  progress: number;
+  totalEpisodes: number | null;
+  rating: number | null;
+  coverImage: string | null;
+  year: number | null;
+  anilistId?: number | null;
+  traktId?: number | null;
+}
+
+export type SyncSource = "anilist" | "trakt";
+
+/* ─── Firestore REST transport ───
+ * All reads/writes go through the Firestore REST API authenticated with the
+ * caller's own Firebase ID token (never an unauthenticated SDK instance), so
+ * the per-user Firestore security rules are enforced by the database itself —
+ * the API server holds no privileged credentials that could bypass them. */
+
+const FIRESTORE_HOST = "https://firestore.googleapis.com/v1";
+
+// Document ids appear in REST paths and backtick-quoted field masks; restrict
+// them so neither can be broken out of. Covers Firestore auto-ids and UUIDs.
+const DOC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function assertDocId(id: string, what: string): string {
+  if (!DOC_ID_RE.test(id)) throw new ApiError(400, `Invalid ${what} id.`);
+  return id;
+}
+
+function docsRoot(session: Session): string {
+  return `${FIRESTORE_HOST}/projects/${session.config.projectId}/databases/(default)/documents`;
+}
+
+function docName(session: Session, ...segments: string[]): string {
+  return `projects/${session.config.projectId}/databases/(default)/documents/${segments.join("/")}`;
+}
+
+async function fsFetch(session: Session, url: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${session.idToken}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+
+  if (res.ok) {
+    return res.json();
+  }
+
+  if (res.status === 404) throw new ApiError(404, "Record not found.");
+  if (res.status === 403) throw new ApiError(403, "Permission denied by database security rules.");
+  if (res.status === 401) throw new ApiError(401, "Database rejected the authentication token.");
+
+  const detail = await res.text().catch(() => "");
+  console.error(`Firestore request failed (${res.status}):`, detail.slice(0, 500));
+  throw new ApiError(502, "Database request failed.");
+}
+
+/* ─── Firestore value encoding ─── */
+
+function toValue(v: unknown): any {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toValue) } };
+  if (typeof v === "object") return { mapValue: { fields: toFields(v as Record<string, unknown>) } };
+  throw new ApiError(400, "Unsupported value type in payload.");
+}
+
+function toFields(obj: Record<string, unknown>): Record<string, any> {
+  const fields: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) fields[key] = toValue(value);
+  }
+  return fields;
+}
+
+function fromValue(v: any): unknown {
+  if (v === null || v === undefined) return null;
+  if ("stringValue" in v) return v.stringValue;
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("nullValue" in v) return null;
+  if ("mapValue" in v) return fromFields(v.mapValue?.fields || {});
+  if ("arrayValue" in v) return (v.arrayValue?.values || []).map(fromValue);
+  if ("timestampValue" in v) return v.timestampValue;
+  return null;
+}
+
+function fromFields(fields: Record<string, any>): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    obj[key] = fromValue(value);
+  }
+  return obj;
+}
+
+function idFromName(name: string): string {
+  return name.split("/").pop() || name;
+}
+
+// Runs a single-collection equality query scoped to the user. The userId
+// filter also satisfies the security-rule ownership check for list queries.
+async function runOwnedQuery(session: Session, collectionId: string): Promise<{ id: string; data: Record<string, unknown> }[]> {
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath: "userId" },
+          op: "EQUAL",
+          value: { stringValue: session.uid },
+        },
+      },
+    },
+  };
+
+  const rows: any[] = await fsFetch(session, `${docsRoot(session)}:runQuery`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+  return (rows || [])
+    .filter((row) => row.document)
+    .map((row) => ({ id: idFromName(row.document.name), data: fromFields(row.document.fields) }));
+}
+
+/* ─── Expenses ─── */
+
+const EXPENSE_CACHE_TTL = 30_000;
+const WATCHLIST_CACHE_TTL = 30_000;
+const BATCH_CONCURRENCY = 3;
+
+// Cache keys include the project id: uids are only unique within a Firebase
+// project, and callers may bring their own project via X-Firebase-Config —
+// without the project scope, a foreign project's uid could collide with (and
+// poison or leak) another user's cached data.
+function expenseCacheKey(session: Session): string {
+  return `expenses:${session.config.projectId}:${session.uid}`;
+}
+
+function watchlistCacheKey(session: Session): string {
+  return `watchlist:${session.config.projectId}:${session.uid}`;
+}
+
+// Shared by listExpenses and getCategories so a categories lookup doesn't
+// re-scan the whole collection on top of the list fetch that just happened.
+async function getRawExpenses(session: Session): Promise<ExpenseRecord[]> {
+  const cacheKey = expenseCacheKey(session);
+  const cached = cacheGet<ExpenseRecord[]>(cacheKey);
+  if (cached) return cached;
+
+  const rows = await runOwnedQuery(session, "expenses");
+  const records: ExpenseRecord[] = rows.map(({ id, data }) => ({
+    id,
+    title: (data.title as string) || "Untitled",
+    amount: typeof data.amount === "number" ? data.amount : null,
+    category: (data.category as string) || null,
+    date: (data.date as string) || null,
+    notes: (data.notes as string) || null,
+    createdAt: typeof data.createdAt === "number" ? data.createdAt : 0,
+  }));
+
+  cacheSet(cacheKey, records, EXPENSE_CACHE_TTL);
+  return records;
+}
+
+export async function listExpenses(
+  session: Session,
+  filters?: { q?: string; category?: string; from?: string; to?: string }
+): Promise<ExpenseRecord[]> {
+  // Copy so in-place sort() below never mutates the cached array.
+  let records = [...(await getRawExpenses(session))];
+
+  if (filters?.q) {
+    const qLower = filters.q.toLowerCase();
+    records = records.filter(
+      (r) =>
+        r.title.toLowerCase().includes(qLower) ||
+        (r.notes && r.notes.toLowerCase().includes(qLower))
+    );
+  }
+
+  if (filters?.category) {
+    const catLower = filters.category.toLowerCase();
+    records = records.filter((r) => r.category && r.category.toLowerCase() === catLower);
+  }
+
+  if (filters?.from) {
+    records = records.filter((r) => r.date && r.date >= filters.from!);
+  }
+
+  if (filters?.to) {
+    records = records.filter((r) => r.date && r.date <= filters.to!);
+  }
+
+  // Sort by date descending, then by createdAt descending
+  records.sort((a, b) => {
+    const dateA = a.date || "";
+    const dateB = b.date || "";
+    if (dateA !== dateB) {
+      return dateB.localeCompare(dateA);
+    }
+    return b.createdAt - a.createdAt;
+  });
+
+  return records;
+}
+
+export async function getCategories(session: Session): Promise<{ id: string; name: string }[]> {
+  const records = await getRawExpenses(session);
+  const uniqueCategories = new Set<string>();
+
+  records.forEach((r) => {
+    if (r.category && r.category.trim()) {
+      uniqueCategories.add(r.category.trim());
+    }
+  });
+
+  return Array.from(uniqueCategories).map((name) => ({ id: name, name }));
+}
+
+export async function createExpense(session: Session, entry: ExpenseEntry) {
+  const docData = {
+    userId: session.uid, // Partition by User UID; rules require it to match the token
+    title: entry.title,
+    amount: entry.amount,
+    category: entry.category || null,
+    date: entry.date || new Date().toISOString().slice(0, 10),
+    notes: entry.notes || null,
+    createdAt: Date.now(),
+  };
+
+  const created = await fsFetch(session, `${docsRoot(session)}/expenses`, {
+    method: "POST",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+
+  cacheInvalidate(expenseCacheKey(session));
+  return { id: idFromName(created.name) };
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i]!) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+export async function createExpenseBatch(session: Session, entries: ExpenseEntry[]) {
+  const results = await mapWithConcurrency(entries, BATCH_CONCURRENCY, (entry) => createExpense(session, entry));
+  return results.map((r, i) => {
+    const entry = entries[i]!;
+    if (r.status === "fulfilled") {
+      return { success: true, title: entry.title, ...r.value };
+    } else {
+      return { success: false, title: entry.title, error: (r.reason as Error)?.message || "Unknown error" };
+    }
+  });
+}
+
+export async function updateExpense(session: Session, id: string, entry: Partial<ExpenseEntry>) {
+  assertDocId(id, "expense");
+
+  const updateData: Record<string, unknown> = {};
+  if (entry.title !== undefined) updateData.title = entry.title;
+  if (entry.amount !== undefined) updateData.amount = entry.amount;
+  if (entry.category !== undefined) updateData.category = entry.category || null;
+  if (entry.date !== undefined) updateData.date = entry.date || null;
+  if (entry.notes !== undefined) updateData.notes = entry.notes || null;
+
+  const params = new URLSearchParams();
+  // The mask never includes userId, so ownership can't be reassigned; the
+  // exists precondition turns a patch of a missing doc into a 404 instead of
+  // an implicit create.
+  for (const field of Object.keys(updateData)) params.append("updateMask.fieldPaths", field);
+  params.append("currentDocument.exists", "true");
+
+  await fsFetch(session, `${docsRoot(session)}/expenses/${id}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(updateData) }),
+  });
+
+  cacheInvalidate(expenseCacheKey(session));
+  return { id };
+}
+
+export async function archiveExpense(session: Session, id: string) {
+  assertDocId(id, "expense");
+
+  await fsFetch(session, `${docsRoot(session)}/expenses/${id}?currentDocument.exists=true`, {
+    method: "DELETE",
+  });
+
+  cacheInvalidate(expenseCacheKey(session));
+  return { id };
+}
+
+/* ─── Watchlist ───
+ * One doc per user (watchlists/{userId}), items keyed by id in a nested map
+ * field — a personal watchlist is naturally bounded (low thousands of titles),
+ * so it fits Firestore's 1MiB document cap comfortably. Writes go through
+ * documents:commit with a field mask per changed item, so ANY number of
+ * adds/updates in one call still costs exactly 1 Firestore write. */
+
+// Commits a masked merge into the user's watchlist doc. `patches` maps item id
+// to either its changed fields or null (= delete the item). `wholeItemIds`
+// marks brand-new items whose entire map should be replaced; other items are
+// masked per-field so partial patches don't wipe sibling fields.
+async function writeWatchlistItems(
+  session: Session,
+  patches: Record<string, Record<string, unknown> | null>,
+  wholeItemIds?: Set<string>
+): Promise<void> {
+  const fieldPaths: string[] = [];
+  const items: Record<string, unknown> = {};
+
+  for (const [id, patch] of Object.entries(patches)) {
+    assertDocId(id, "watchlist item");
+    if (patch === null) {
+      fieldPaths.push(`items.\`${id}\``); // masked but absent from fields → deleted
+    } else if (wholeItemIds?.has(id)) {
+      fieldPaths.push(`items.\`${id}\``);
+      items[id] = patch;
+    } else {
+      for (const key of Object.keys(patch)) {
+        if (patch[key] === undefined) continue;
+        fieldPaths.push(`items.\`${id}\`.${key}`);
+      }
+      items[id] = patch;
+    }
+  }
+
+  if (fieldPaths.length === 0) return;
+
+  const body = {
+    writes: [
+      {
+        update: {
+          name: docName(session, "watchlists", session.uid),
+          fields: toFields({ items }),
+        },
+        updateMask: { fieldPaths },
+      },
+    ],
+  };
+
+  await fsFetch(session, `${docsRoot(session)}:commit`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// One-time lazy migration from the old per-item "watchlist" collection
+// (pre-redesign) into the new single-doc shape, so existing data isn't
+// stranded. Old docs are left in place untouched (not deleted) as a safety
+// net; this only runs when a user's new watchlists/{userId} doc doesn't exist.
+async function migrateLegacyWatchlist(session: Session): Promise<Record<string, WatchlistItem>> {
+  const rows = await runOwnedQuery(session, "watchlist");
+  if (rows.length === 0) return {};
+
+  const items: Record<string, WatchlistItem> = {};
+  rows.forEach(({ id, data }) => {
+    items[id] = {
+      title: (data.title as string) || "Untitled",
+      type: (data.type as WatchlistItem["type"]) || "movie",
+      status: (data.status as WatchlistItem["status"]) || "plan_to_watch",
+      progress: typeof data.progress === "number" ? data.progress : 0,
+      totalEpisodes: typeof data.totalEpisodes === "number" ? data.totalEpisodes : null,
+      rating: typeof data.rating === "number" ? data.rating : null,
+      coverImage: (data.coverImage as string) || null,
+      year: typeof data.year === "number" ? data.year : null,
+      updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : 0,
+      anilistId: typeof data.anilistId === "number" ? data.anilistId : null,
+      traktId: typeof data.traktId === "number" ? data.traktId : null,
+    };
+  });
+
+  await writeWatchlistItems(session, items as unknown as Record<string, Record<string, unknown>>, new Set(Object.keys(items)));
+  return items;
+}
+
+async function getRawWatchlist(session: Session): Promise<Record<string, WatchlistItem>> {
+  const cacheKey = watchlistCacheKey(session);
+  const cached = cacheGet<Record<string, WatchlistItem>>(cacheKey);
+  if (cached) return cached;
+
+  let items: Record<string, WatchlistItem>;
+  try {
+    const snap = await fsFetch(session, `${docsRoot(session)}/watchlists/${session.uid}`);
+    items = (fromFields(snap.fields).items as Record<string, WatchlistItem>) || {};
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      items = await migrateLegacyWatchlist(session);
+    } else {
+      throw error;
+    }
+  }
+
+  cacheSet(cacheKey, items, WATCHLIST_CACHE_TTL);
+  return items;
+}
+
+export async function listWatchlist(session: Session): Promise<WatchlistItem[]> {
+  const itemsMap = await getRawWatchlist(session);
+  const items = Object.entries(itemsMap).map(([id, data]) => ({ ...data, id }));
+  items.sort((a, b) => b.updatedAt - a.updatedAt);
+  return items;
+}
+
+export async function addWatchlistItem(session: Session, item: Omit<WatchlistItem, "id" | "updatedAt">) {
+  const id = randomUUID();
+  const docData = { ...item, updatedAt: Date.now() };
+
+  await writeWatchlistItems(session, { [id]: docData as unknown as Record<string, unknown> }, new Set([id]));
+  cacheInvalidate(watchlistCacheKey(session));
+  return { id };
+}
+
+export async function updateWatchlistItem(
+  session: Session,
+  id: string,
+  item: Partial<Omit<WatchlistItem, "id" | "updatedAt">>
+) {
+  const patch: Record<string, unknown> = { ...item, updatedAt: Date.now() };
+  Object.keys(patch).forEach((key) => {
+    if (patch[key] === undefined) delete patch[key];
+  });
+
+  await writeWatchlistItems(session, { [id]: patch });
+  cacheInvalidate(watchlistCacheKey(session));
+  return { id };
+}
+
+// Syncs an external library (AniList, Trakt, ...) into the user's watchlist.
+// Reads once, diffs against what's already stored (skipping entries whose
+// tracked fields didn't change), and commits every add/update in a single
+// masked write — a full library sync costs exactly 1 Firestore write no matter
+// how many titles changed.
+export async function bulkSyncWatchlist(
+  session: Session,
+  source: SyncSource,
+  entries: SyncEntry[]
+): Promise<{ added: number; updated: number; skipped: number }> {
+  const idField = source === "anilist" ? "anilistId" : "traktId";
+
+  const itemsMap = await getRawWatchlist(session);
+  const existingByExternalId = new Map<number, { id: string; item: WatchlistItem }>();
+  Object.entries(itemsMap).forEach(([id, item]) => {
+    const extId = item[idField];
+    if (extId !== undefined && extId !== null) {
+      existingByExternalId.set(Number(extId), { id, item });
+    }
+  });
+
+  let added = 0, updated = 0, skipped = 0;
+  const now = Date.now();
+  const patches: Record<string, Record<string, unknown> | null> = {};
+  const newIds = new Set<string>();
+
+  for (const entry of entries) {
+    const extId = source === "anilist" ? entry.anilistId : entry.traktId;
+    const match = extId !== undefined && extId !== null ? existingByExternalId.get(Number(extId)) : undefined;
+
+    if (match) {
+      const changed =
+        match.item.status !== entry.status ||
+        Number(match.item.progress || 0) !== Number(entry.progress || 0) ||
+        Number(match.item.rating || 0) !== Number(entry.rating || 0);
+
+      if (!changed) {
+        skipped++;
+        continue;
+      }
+
+      patches[match.id] = {
+        status: entry.status,
+        progress: entry.progress,
+        rating: entry.rating,
+        updatedAt: now,
+      };
+      updated++;
+    } else {
+      const id = randomUUID();
+      patches[id] = {
+        title: entry.title,
+        type: entry.type,
+        status: entry.status,
+        progress: entry.progress,
+        totalEpisodes: entry.totalEpisodes,
+        rating: entry.rating,
+        coverImage: entry.coverImage,
+        year: entry.year,
+        anilistId: entry.anilistId ?? null,
+        traktId: entry.traktId ?? null,
+        updatedAt: now,
+      };
+      newIds.add(id);
+      added++;
+    }
+  }
+
+  await writeWatchlistItems(session, patches, newIds);
+  cacheInvalidate(watchlistCacheKey(session));
+  return { added, updated, skipped };
+}
+
+export async function deleteWatchlistItem(session: Session, id: string) {
+  await writeWatchlistItems(session, { [id]: null });
+  cacheInvalidate(watchlistCacheKey(session));
+  return { id };
+}
