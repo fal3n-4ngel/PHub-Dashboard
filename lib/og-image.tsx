@@ -1,7 +1,7 @@
 // Shared JSX tree for the social preview images (opengraph-image.tsx and
 // twitter-image.tsx both render this at 1200x630 via next/og's ImageResponse).
 export function SocialCard() {
-  const pills = ["Expenses", "Watchlist", "Books", "ChatGPT"];
+  const pills = ["Expenses", "Watchlist", "Investments", "Books", "AI Agent"];
 
   return (
     <div
@@ -24,7 +24,7 @@ export function SocialCard() {
           <div style={{ display: "flex", width: "25px", height: "25px", borderRadius: "6px", backgroundColor: "#1c1b18", opacity: 0.85 }} />
         </div>
         <div style={{ display: "flex", fontSize: "32px", fontWeight: 700, color: "#1c1b18", letterSpacing: "-1px" }}>
-          Phub Dashboard
+          PHub Dashboard
         </div>
       </div>
 

@@ -17,9 +17,11 @@
 ---
 
 ## 💡 Why This Exists
-Well , it's been a while since i worked on any public projects , mostly coz I rarely get tym after my office works , and even when I do it's mostly some personal api's or portfilio changes. 
-So I already had this system to track expenses and movies in personal api , which i enchanced when chatgpt released custom gpts so I can just add stuff via chat ( use ai with no api token or payment ). Instead of using AI in my api , I used my API i AI (sounded cool in my head he he) , anyways a friend saw it he wanted it so rather than giving him my personal api collection thought making a new dashboard itself and here we are
+Well, it’s been a while since I worked on any public projects—mostly coz I rarely get time after work, and even when I do, it’s usually personal APIs or portfolio updates.
 
+I already had a system to track my expenses and movies via my perosnal api, which I enhanced when ChatGPT released Custom GPTs so I could add stuff directly via chat (use ai without paying for api). Instead of putting AI inside my API, I put my API inside AI (sounded cool in my head)
+
+Anyway, a friend saw it and wanted it too, so rather than handing over my personal API collection, I decided to build a proper dashboard instead. And here we are!
 ---
 
 ## 🛠 Tech Stack
