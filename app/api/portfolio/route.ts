@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { ApiError, toErrorResponse } from "@/lib/errors";
 import { getPortfolio, updatePortfolio } from "@/lib/firebase";
+import { validatePortfolioAssets } from "@/lib/validate";
 
 export const dynamic = "force-dynamic";
 
@@ -18,18 +19,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireUser(req);
-    let body: any;
+
+    let body: unknown;
     try {
       body = await req.json();
     } catch {
       throw new ApiError(400, "Invalid JSON body");
     }
 
-    if (!Array.isArray(body?.assets)) {
-      throw new ApiError(400, "Expected assets array");
-    }
-
-    await updatePortfolio(session, body.assets);
+    const assets = validatePortfolioAssets(body);
+    await updatePortfolio(session, assets);
     return NextResponse.json({ success: true });
   } catch (error) {
     return toErrorResponse(error, "POST /api/portfolio");

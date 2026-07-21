@@ -34,10 +34,10 @@ export async function GET() {
     info: {
       title: "Personal Dashboard API",
       description:
-        "API for a personal expense ledger and a movie/show/anime watchlist, backed by Firestore. " +
-        "Every request must carry the user's Firebase ID token as a Bearer token; all data is scoped to that user. " +
-        "Self-hosted deployments configure Firebase via the FIREBASE_CONFIG environment variable.",
-      version: "2.0.0",
+        "API for a personal expense ledger, subscription tracker, investment portfolio, movie/show/anime/book watchlist, " +
+        "and scratchpad notes, backed by Firestore. Every request must carry the user's Firebase ID token as a Bearer token; " +
+        "all data is scoped to that user. Self-hosted deployments configure Firebase via the FIREBASE_CONFIG environment variable.",
+      version: "2.1.0",
       contact: { name: AUTHOR.name, url: AUTHOR.url, email: AUTHOR.email },
     },
     servers: [
@@ -188,6 +188,109 @@ export async function GET() {
           responses: writeResult("Watchlist item deleted"),
         },
       },
+      "/api/subscriptions": {
+        get: {
+          operationId: "listSubscriptions",
+          summary: "List subscriptions",
+          description: "Retrieve the user's recurring subscriptions, newest first.",
+          "x-openai-isConsequential": false,
+          responses: {
+            "200": {
+              description: "Array of subscriptions",
+              content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/SubscriptionRecord" } } } },
+            },
+            "401": errorResponse("Missing or invalid authentication token"),
+          },
+        },
+        post: {
+          operationId: "createSubscription",
+          summary: "Add a subscription",
+          description: "Track a new recurring monthly or yearly subscription cost.",
+          "x-openai-isConsequential": false,
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionEntry" } } },
+          },
+          responses: writeResult("Subscription created"),
+        },
+      },
+      "/api/subscriptions/{id}": {
+        patch: {
+          operationId: "updateSubscription",
+          summary: "Update a subscription",
+          description: "Update one or more fields of an existing subscription. Only the provided fields change.",
+          "x-openai-isConsequential": false,
+          parameters: [idParam("subscription")],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionPatch" } } },
+          },
+          responses: writeResult("Subscription updated"),
+        },
+        delete: {
+          operationId: "deleteSubscription",
+          summary: "Delete a subscription",
+          description: "Stop tracking a subscription.",
+          "x-openai-isConsequential": true,
+          parameters: [idParam("subscription")],
+          responses: writeResult("Subscription deleted"),
+        },
+      },
+      "/api/portfolio": {
+        get: {
+          operationId: "getPortfolio",
+          summary: "Get the investment portfolio",
+          description: "Retrieve every asset (equities, crypto, mutual funds, gold, cash, ...) in the user's investment portfolio.",
+          "x-openai-isConsequential": false,
+          responses: {
+            "200": {
+              description: "The portfolio",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/PortfolioRecord" } } },
+            },
+            "401": errorResponse("Missing or invalid authentication token"),
+          },
+        },
+        post: {
+          operationId: "replacePortfolioAssets",
+          summary: "Replace the portfolio's assets",
+          description:
+            "Replace the entire assets list with the array provided — this is a full replace, not a per-asset patch. " +
+            "To add or edit one asset: call getPortfolio first, modify the one asset client-side, and send the whole assets array back " +
+            "(including every unchanged asset with its existing id).",
+          "x-openai-isConsequential": true,
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/PortfolioUpdate" } } },
+          },
+          responses: writeResult("Portfolio updated"),
+        },
+      },
+      "/api/notes": {
+        get: {
+          operationId: "getNote",
+          summary: "Get the scratchpad note",
+          description: "Retrieve the user's single auto-saving scratchpad note.",
+          "x-openai-isConsequential": false,
+          responses: {
+            "200": {
+              description: "The note",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/NoteRecord" } } },
+            },
+            "401": errorResponse("Missing or invalid authentication token"),
+          },
+        },
+        post: {
+          operationId: "updateNote",
+          summary: "Replace the scratchpad note",
+          description: "Overwrite the entire contents of the user's scratchpad note.",
+          "x-openai-isConsequential": false,
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/NoteContent" } } },
+          },
+          responses: writeResult("Note saved"),
+        },
+      },
     },
     components: {
       securitySchemes: {
@@ -295,6 +398,88 @@ export async function GET() {
             rating: { type: ["number", "null"], minimum: 0, maximum: 10 },
             coverImage: { type: ["string", "null"] },
             year: { type: ["integer", "null"], minimum: 1800, maximum: 2200 },
+          },
+        },
+        SubscriptionEntry: {
+          type: "object",
+          required: ["name", "cost", "billingCycle", "nextBillingDate"],
+          properties: {
+            name: { type: "string", maxLength: 200, examples: ["Netflix"] },
+            cost: { type: "number", minimum: 0, description: "Cost per billing cycle (INR)", examples: [649] },
+            billingCycle: { type: "string", enum: ["monthly", "yearly"] },
+            nextBillingDate: { type: "string", format: "date", description: "Next charge date (YYYY-MM-DD)", examples: ["2026-08-15"] },
+            icon: { type: ["string", "null"], maxLength: 10, description: "Optional short emoji/code to represent the service" },
+          },
+        },
+        SubscriptionPatch: {
+          type: "object",
+          description: "Any subset of subscription fields to change.",
+          properties: {
+            name: { type: "string", maxLength: 200 },
+            cost: { type: "number", minimum: 0 },
+            billingCycle: { type: "string", enum: ["monthly", "yearly"] },
+            nextBillingDate: { type: "string", format: "date" },
+            icon: { type: ["string", "null"], maxLength: 10 },
+          },
+        },
+        SubscriptionRecord: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Unique subscription id — use for updates/deletes" },
+            name: { type: "string" },
+            cost: { type: "number" },
+            billingCycle: { type: "string", enum: ["monthly", "yearly"] },
+            nextBillingDate: { type: "string", format: "date" },
+            icon: { type: ["string", "null"] },
+            createdAt: { type: "integer", description: "Creation time (Unix ms)" },
+          },
+        },
+        InvestmentAsset: {
+          type: "object",
+          required: ["name", "category", "amount", "investedAmount"],
+          properties: {
+            id: { type: "string", description: "Unique asset id. Omit when adding a brand-new asset — the server generates one." },
+            name: { type: "string", maxLength: 200, examples: ["Nifty 50 Index Fund"] },
+            category: { type: "string", enum: ["equity", "crypto", "mutual_fund", "sip", "gold", "cash", "other"] },
+            amount: { type: "number", minimum: 0, description: "Current value of the holding (INR)" },
+            investedAmount: { type: "number", minimum: 0, description: "Total amount originally invested (INR)" },
+            quantity: { type: "number", minimum: 0, description: "Units/shares/coins held" },
+            buyPrice: { type: "number", minimum: 0, description: "Average purchase price per unit" },
+            currentPrice: { type: "number", minimum: 0, description: "Latest known price per unit" },
+            notes: { type: "string", maxLength: 1000 },
+            createdAt: { type: "integer", description: "Creation time (Unix ms)" },
+          },
+        },
+        PortfolioRecord: {
+          type: "object",
+          properties: {
+            assets: { type: "array", items: { $ref: "#/components/schemas/InvestmentAsset" } },
+            updatedAt: { type: "integer", description: "Last update time (Unix ms)" },
+          },
+        },
+        PortfolioUpdate: {
+          type: "object",
+          required: ["assets"],
+          properties: {
+            assets: {
+              type: "array",
+              maxItems: 500,
+              items: { $ref: "#/components/schemas/InvestmentAsset" },
+              description: "The complete list of assets — this replaces the whole portfolio, so include every asset that should still exist.",
+            },
+          },
+        },
+        NoteRecord: {
+          type: "object",
+          properties: {
+            content: { type: "string", description: "Markdown/plain-text note content" },
+            updatedAt: { type: "integer", description: "Last update time (Unix ms)" },
+          },
+        },
+        NoteContent: {
+          type: "object",
+          properties: {
+            content: { type: "string", maxLength: 50000 },
           },
         },
         WriteResult: {

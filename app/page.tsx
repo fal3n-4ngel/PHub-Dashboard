@@ -347,7 +347,10 @@ export default function Dashboard() {
   const [isFetchingExpenses, setIsFetchingExpenses] = useState(false);
   const [expenseTab, setExpenseTab] = useState<"ledger"|"subscriptions">("ledger");
 
-  /* ─── Custom Confirm Dialog State ─── */
+  /* ─── Custom Confirm/Alert Dialog State ───
+   * Replaces native confirm()/alert() everywhere — those don't render
+   * consistently (or at all, in some in-app mobile browsers/webviews) and
+   * can't be themed. `variant: "alert"` renders a single-button dialog. */
   const [confirmDlg, setConfirmDlg] = useState<{
     isOpen: boolean;
     title: string;
@@ -356,12 +359,24 @@ export default function Dashboard() {
     confirmText?: string;
     cancelText?: string;
     isDestructive?: boolean;
+    variant?: "confirm" | "alert";
+    tone?: "danger" | "success" | "info";
   }>({
     isOpen: false,
     title: "",
     message: "",
     onConfirm: () => {},
   });
+
+  /* ─── New-user onboarding guide ─── */
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  // Distinct from isFetchingExpenses: that flag starts false (its default
+  // state) and only flips true once fetchExpenses() actually runs, so on the
+  // very first render after login both isFetchingExpenses and expenses are
+  // still at their initial "empty" values — checking them directly would
+  // misread "haven't fetched yet" as "genuinely has zero expenses". This
+  // flag only ever flips once real data has come back.
+  const [expensesLoaded, setExpensesLoaded] = useState(false);
 
   /* ─── Watchlist State ─── */
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
@@ -538,14 +553,36 @@ export default function Dashboard() {
 
   /* ─── Fetch data once when user logs in (expenseSearch is filtered client-side, not refetched) ─── */
   useEffect(() => {
-    if (user) { 
-      fetchExpenses(); 
+    if (user) {
+      fetchExpenses();
       fetchWatchlist();
       fetchSubscriptions();
       fetchNote();
       fetchInvestments();
     }
   }, [user]);
+
+  /* ─── First-time onboarding guide ───
+   * Shows once, ever, per browser — gated on a localStorage flag so it never
+   * reappears just because a returning user cleared their expenses. Waits
+   * on expensesLoaded (not isFetchingExpenses) since that flag — and the
+   * expenses array itself — still hold their initial empty-state values on
+   * the very first render after login, before the real fetch resolves;
+   * checking them directly would misread "haven't fetched yet" as "actually
+   * has zero expenses" and could flash the guide at returning users too.
+   * Reads the AniList/Trakt tokens directly from localStorage (synchronous)
+   * rather than the anilistUser/traktUser state, since those only resolve
+   * after a separate async profile fetch and would otherwise race this. */
+  useEffect(() => {
+    if (!user || !expensesLoaded) return;
+    if (localStorage.getItem("phub_onboarding_seen")) return;
+    localStorage.setItem("phub_onboarding_seen", "1");
+
+    const hasIntegration = !!localStorage.getItem("anilist_token") || !!localStorage.getItem("trakt_access_token");
+    if (expenses.length === 0 && !hasIntegration) {
+      setShowOnboarding(true);
+    }
+  }, [user, expensesLoaded, expenses.length]);
 
   const getHeaders = useCallback(() => ({
     "Content-Type": "application/json",
@@ -571,6 +608,25 @@ export default function Dashboard() {
       confirmText,
       cancelText,
       isDestructive,
+      variant: "confirm",
+    });
+  };
+
+  // Single-button themed dialog — replaces native alert().
+  const triggerAlert = (
+    title: string,
+    message: string,
+    tone: "danger" | "success" | "info" = "info",
+    confirmText = "OK"
+  ) => {
+    setConfirmDlg({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => setConfirmDlg(prev => ({ ...prev, isOpen: false })),
+      confirmText,
+      variant: "alert",
+      tone,
     });
   };
 
@@ -900,7 +956,7 @@ export default function Dashboard() {
       const res = await fetch("/api/expenses", { headers: getHeaders() });
       if (res.ok) setExpenses(await res.json());
     } catch (err) { console.error(err); }
-    finally { setIsFetchingExpenses(false); }
+    finally { setIsFetchingExpenses(false); setExpensesLoaded(true); }
   };
 
   const addExpense = async (e: React.FormEvent) => {
@@ -1356,34 +1412,47 @@ export default function Dashboard() {
         });
       }
 
-      if (newItems.length > 0) {
-        if (!confirm(`Found ${newItems.length} movies. Import them into your watchlist?`)) {
-          setIsImportingLb(false);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-          return;
-        }
+      setIsImportingLb(false);
 
-        const savedItems: WatchlistItem[] = [];
-        for (const item of newItems) {
-          const res = await fetch("/api/watchlist", {
-            method: "POST", headers: getHeaders(),
-            body: JSON.stringify(item),
-          });
-          if (res.ok) {
-            const { id } = await res.json();
-            savedItems.push({ id, ...item });
-          }
-        }
-        setWatchlist(prev => [...savedItems, ...prev]);
-        alert(`Successfully imported ${savedItems.length} movies!`);
-      } else {
-        alert("No movies found in the CSV.");
+      if (newItems.length === 0) {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        triggerAlert("No Movies Found", "We couldn't find any movies in that CSV file.", "info");
+        return;
       }
+
+      triggerConfirm(
+        "Import Watchlist",
+        `Found ${newItems.length} movies. Import them into your watchlist?`,
+        async () => {
+          setIsImportingLb(true);
+          try {
+            const savedItems: WatchlistItem[] = [];
+            for (const item of newItems) {
+              const res = await fetch("/api/watchlist", {
+                method: "POST", headers: getHeaders(),
+                body: JSON.stringify(item),
+              });
+              if (res.ok) {
+                const { id } = await res.json();
+                savedItems.push({ id, ...item });
+              }
+            }
+            setWatchlist(prev => [...savedItems, ...prev]);
+            triggerAlert("Import Complete", `Successfully imported ${savedItems.length} movies!`, "success");
+          } catch (err: any) {
+            triggerAlert("Import Failed", err.message, "danger");
+          } finally {
+            setIsImportingLb(false);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }
+        },
+        false,
+        "Import"
+      );
     } catch (err: any) {
-      alert("Import failed: " + err.message);
-    } finally {
       setIsImportingLb(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      triggerAlert("Import Failed", err.message, "danger");
     }
   };
 
@@ -1555,21 +1624,22 @@ export default function Dashboard() {
             <rect x="1.6" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
             <rect x="11.2" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.85" />
           </svg>
-          <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "-0.3px" }}>Phub Dashboard</span>
+          <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "-0.3px" }}>PHub Dashboard</span>
         </div>
         <div>
           {user && (
             <img
               src={user.photoURL || undefined}
               alt="Profile"
-              onClick={async () => {
-                if (confirm("Sign out?")) {
+              onClick={() => {
+                triggerConfirm("Sign Out", "Are you sure you want to sign out?", async () => {
                   if (firebaseAuth) {
                     await firebaseAuth.signOut(firebaseAuth.auth);
                     setExpenses([]);
                     setWatchlist([]);
+                    setExpensesLoaded(false);
                   }
-                }
+                }, false, "Sign Out");
               }}
               style={{
                 width: "28px",
@@ -1691,7 +1761,7 @@ export default function Dashboard() {
               <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.displayName || "User"}</p>
               <p style={{ fontSize: "10px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</p>
             </div>
-            <button onClick={async () => { if (firebaseAuth) await firebaseAuth.signOut(firebaseAuth.auth); setExpenses([]); setWatchlist([]); }} title="Sign out" style={{ backgroundColor: "transparent", padding: "4px", color: "var(--text-muted)" }}>
+            <button onClick={async () => { if (firebaseAuth) await firebaseAuth.signOut(firebaseAuth.auth); setExpenses([]); setWatchlist([]); setExpensesLoaded(false); }} title="Sign out" style={{ backgroundColor: "transparent", padding: "4px", color: "var(--text-muted)" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
           </div>
@@ -1887,37 +1957,37 @@ export default function Dashboard() {
               </div>
 
               {activeChart === "category" ? (
-                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "12px" }}>
+                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "260px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "16px", paddingTop: "8px" }}>
                   {Object.entries(catBreakdown).slice(0, 8).map(([cat, total], idx) => {
                     const maxAmt = Math.max(...Object.values(catBreakdown), 1);
                     const pct = (total / maxAmt) * 100;
                     const colors = ["#b3666b", "#e39282", "#1c1b18", "#6e6c64", "#d1b89a", "#eae8e0", "#9c9a92", "#c4c2ba"];
                     return (
-                      <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: "52px", maxWidth: "68px", flexShrink: 0, flex: 1 }}>
-                        <span style={{ fontSize: "9.5px", fontWeight: 600, color: "var(--text-secondary)" }}>{currency}{(total/1000).toFixed(0)}k</span>
-                        <div className="chart-bar-container" style={{ width: "20px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
-                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
+                      <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", minWidth: "60px", maxWidth: "90px", flexShrink: 0, flex: 1 }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>{currency}{(total/1000).toFixed(1)}k</span>
+                        <div className="chart-bar-container" style={{ width: "32px", height: "200px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "6px 6px 0 0" }}>
+                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "6px 6px 0 0", transition: "height 0.5s ease" }}></div>
                         </div>
-                        <span style={{ fontSize: "8px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
+                        <span style={{ fontSize: "9px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
                       </div>
                     );
                   })}
                   {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transactions to plot.</p>}
                 </div>
               ) : (
-                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "12px" }}>
+                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "260px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "16px", paddingTop: "8px" }}>
                   {dailyTrend.map(([date, total]) => {
                     const maxAmt = Math.max(...dailyTrend.map(d => d[1]), 1);
                     const pct = (total / maxAmt) * 100;
                     const dateParts = date.split("-");
                     const dateFormatted = dateParts.length === 3 ? `${dateParts[1]}/${dateParts[2]}` : date;
                     return (
-                      <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: "52px", maxWidth: "68px", flexShrink: 0, flex: 1 }}>
-                        <span style={{ fontSize: "9.5px", fontWeight: 600, color: "var(--text-secondary)" }}>{currency}{total.toLocaleString()}</span>
-                        <div className="chart-bar-container" style={{ width: "20px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
-                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: "#3b82f6", borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
+                      <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", minWidth: "60px", maxWidth: "90px", flexShrink: 0, flex: 1 }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>{currency}{total.toLocaleString()}</span>
+                        <div className="chart-bar-container" style={{ width: "32px", height: "200px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "6px 6px 0 0" }}>
+                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: "#3b82f6", borderRadius: "6px 6px 0 0", transition: "height 0.5s ease" }}></div>
                         </div>
-                        <span style={{ fontSize: "8px", fontFamily: "monospace", color: "var(--text-muted)", textAlign: "center", width: "100%" }}>{dateFormatted}</span>
+                        <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--text-muted)", textAlign: "center", width: "100%" }}>{dateFormatted}</span>
                       </div>
                     );
                   })}
@@ -3031,50 +3101,152 @@ export default function Dashboard() {
         )}
       </nav>
 
-      {/* ─── Themed Confirm Dialog ─── */}
-      {confirmDlg.isOpen && (
+      {/* ─── Themed Confirm/Alert Dialog ─── */}
+      {confirmDlg.isOpen && (() => {
+        const isAlert = confirmDlg.variant === "alert";
+        const tone = confirmDlg.tone || "danger";
+        const iconByTone: Record<string, { bg: string; color: string; path: React.ReactNode }> = {
+          danger: {
+            bg: "rgba(179,102,107,0.12)", color: "#b3666b",
+            path: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+          },
+          success: {
+            bg: "rgba(34,197,94,0.12)", color: "#22c55e",
+            path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+          },
+          info: {
+            bg: "rgba(59,130,246,0.12)", color: "#3b82f6",
+            path: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>,
+          },
+        };
+        const showIcon = isAlert || confirmDlg.isDestructive !== false;
+        const icon = isAlert ? iconByTone[tone] : iconByTone.danger;
+
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", padding: "16px" }}
+            onClick={() => setConfirmDlg(prev => ({ ...prev, isOpen: false }))}
+          >
+            <div
+              className="bento-card"
+              style={{ width: "100%", maxWidth: "400px", padding: "28px", display: "flex", flexDirection: "column", gap: "16px", animation: "fadeInScale 0.15s ease" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <style>{`@keyframes fadeInScale { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }`}</style>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
+                {showIcon && (
+                  <div style={{ width: "40px", height: "40px", borderRadius: "10px", backgroundColor: icon.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={icon.color} strokeWidth="2">{icon.path}</svg>
+                  </div>
+                )}
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: "15px", marginBottom: "6px" }}>{confirmDlg.title}</p>
+                  <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5, whiteSpace: "pre-line" }}>{confirmDlg.message}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                {!isAlert && (
+                  <button
+                    className="btn-secondary"
+                    onClick={() => setConfirmDlg(prev => ({ ...prev, isOpen: false }))}
+                  >
+                    {confirmDlg.cancelText || "Cancel"}
+                  </button>
+                )}
+                <button
+                  style={{
+                    backgroundColor: isAlert
+                      ? iconByTone[tone].color
+                      : (confirmDlg.isDestructive !== false ? "#b3666b" : "var(--text-primary)"),
+                    color: "#fff",
+                    border: "none",
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    width: isAlert ? "100%" : undefined,
+                  }}
+                  onClick={confirmDlg.onConfirm}
+                >
+                  {confirmDlg.confirmText || "Confirm"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ─── First-time onboarding guide ─── */}
+      {showOnboarding && (
         <div
-          style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
-          onClick={() => setConfirmDlg(prev => ({ ...prev, isOpen: false }))}
+          style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", padding: "16px" }}
+          onClick={() => setShowOnboarding(false)}
         >
           <div
             className="bento-card"
-            style={{ width: "100%", maxWidth: "400px", margin: "16px", padding: "28px", display: "flex", flexDirection: "column", gap: "16px", animation: "fadeInScale 0.15s ease" }}
+            style={{ width: "100%", maxWidth: "540px", maxHeight: "88vh", overflowY: "auto", padding: "32px", display: "flex", flexDirection: "column", gap: "22px", animation: "fadeInScale 0.15s ease" }}
             onClick={e => e.stopPropagation()}
           >
-            <style>{`@keyframes fadeInScale { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }`}</style>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
-              {confirmDlg.isDestructive !== false && (
-                <div style={{ width: "40px", height: "40px", borderRadius: "10px", backgroundColor: "rgba(179,102,107,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b3666b" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <svg width="34" height="34" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                  <rect x="1.6" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" />
+                  <rect x="11.2" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+                  <rect x="1.6" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+                  <rect x="11.2" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.85" />
+                </svg>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: "18px", letterSpacing: "-0.3px", lineHeight: 1.2 }}>Welcome to PHub</p>
+                  <p className="label-mono" style={{ marginTop: "2px" }}>Personal Hub</p>
                 </div>
-              )}
-              <div>
-                <p style={{ fontWeight: 700, fontSize: "15px", marginBottom: "6px" }}>{confirmDlg.title}</p>
-                <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5 }}>{confirmDlg.message}</p>
               </div>
-            </div>
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
               <button
-                className="btn-secondary"
-                onClick={() => setConfirmDlg(prev => ({ ...prev, isOpen: false }))}
+                onClick={() => setShowOnboarding(false)}
+                style={{ backgroundColor: "var(--bg-secondary)", padding: "8px", borderRadius: "8px", color: "var(--text-muted)", flexShrink: 0, display: "flex" }}
               >
-                {confirmDlg.cancelText || "Cancel"}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
-              <button
-                style={{
-                  backgroundColor: confirmDlg.isDestructive !== false ? "#b3666b" : "var(--text-primary)",
-                  color: "#fff",
-                  border: "none",
-                  padding: "8px 18px",
-                  borderRadius: "8px",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-                onClick={confirmDlg.onConfirm}
+            </div>
+
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "-10px" }}>Here's everything you've got in one place:</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              {[
+                { icon: "💸", bg: "#fde8e4", title: "Expense Ledger", desc: "Log transactions, tag categories, and set a custom salary-cycle day to see spending by pay period instead of calendar month." },
+                ...(showInvestmentsTab ? [{ icon: "📈", bg: "#dcfce7", title: "Investments", desc: "Track equities, crypto, mutual funds, gold, and cash in one portfolio view." }] : []),
+                { icon: "🎬", bg: "#ede9fe", title: "Watchlist", desc: "Movies, shows, and anime in one place — sync bidirectionally with AniList & Trakt, or import a Letterboxd CSV export." },
+                { icon: "📚", bg: "#fef9c3", title: "Book Library", desc: "Search OpenLibrary to add books and track your reading progress." },
+                { icon: "🔄", bg: "#dbeafe", title: "Subscriptions", desc: "Keep tabs on recurring monthly/yearly costs and your true effective monthly spend." },
+                { icon: "📝", bg: "#f4f3ec", title: "Notes", desc: "A lightweight, auto-saving scratchpad for quick thoughts." },
+                { icon: "🤖", bg: "#d1fae5", title: "AI Assistant", desc: "Connect ChatGPT via a Custom GPT Action — log expenses or update your watchlist just by chatting." },
+              ].map((f) => (
+                <div key={f.title} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", backgroundColor: f.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0 }}>
+                    {f.icon}
+                  </div>
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: "13.5px" }}>{f.title}</p>
+                    <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", lineHeight: 1.5, marginTop: "2px" }}>{f.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <a
+                href="/assistant"
+                className="btn-secondary"
+                style={{ flex: "1 1 200px", textAlign: "center", textDecoration: "none" }}
               >
-                {confirmDlg.confirmText || "Confirm"}
+                Set up ChatGPT →
+              </a>
+              <button
+                onClick={() => setShowOnboarding(false)}
+                className="btn-primary"
+                style={{ flex: "1 1 200px" }}
+              >
+                Let's go
               </button>
             </div>
           </div>

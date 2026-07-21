@@ -1475,7 +1475,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
       <header className="landing-header">
         <a href="#" className="landing-logo">
           <BentoLogo size={22} color="#1c1b18" />
-          <span>Phub Dashboard</span>
+          <span>PHub Dashboard</span>
         </a>
         <nav className="landing-nav">
           <a href="#how-it-works" className="landing-nav-link">How It Works</a>
@@ -1941,7 +1941,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
             <div className="footer-brand">
               <a href="#" className="footer-logo">
                 <BentoLogo size={18} color="#1c1b18" />
-                Phub Dashboard
+                PHub Dashboard
               </a>
               <p className="footer-desc">
                 A private tracking dashboard for media watchlists, daily expenses, book reading, and notes. Built for self-hosters and privacy-first users.

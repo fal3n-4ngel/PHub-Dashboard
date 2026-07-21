@@ -1,9 +1,13 @@
+import { randomUUID } from "crypto";
 import { ApiError } from "./errors";
-import type { ExpenseEntry, SubscriptionEntry, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
+import type { ExpenseEntry, InvestmentAsset, SubscriptionEntry, SubscriptionRecord, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
 
 const MEDIA_TYPES = ["movie", "show", "anime", "book"] as const;
 const MEDIA_STATUSES = ["plan_to_watch", "watching", "completed", "dropped"] as const;
 const BILLING_CYCLES = ["monthly", "yearly"] as const;
+const ASSET_CATEGORIES = ["equity", "crypto", "mutual_fund", "sip", "gold", "cash", "other"] as const;
+
+export const MAX_PORTFOLIO_ASSETS = 500;
 
 export const MAX_EXPENSE_BATCH = 100;
 export const MAX_SYNC_ENTRIES = 5000;
@@ -199,6 +203,22 @@ export function validateSubscriptionEntry(body: unknown): SubscriptionEntry {
   };
 }
 
+// Whitelists patchable fields — arbitrary keys (id, createdAt, userId, ...)
+// in the body are dropped rather than written to Firestore.
+export function validateSubscriptionPatch(body: unknown): Partial<Omit<SubscriptionRecord, "id" | "createdAt">> {
+  const b = requireObject(body, "Subscription patch");
+  const patch: Partial<Omit<SubscriptionRecord, "id" | "createdAt">> = {};
+  if (b.name !== undefined) patch.name = asTrimmedString(b.name, "name", 200, true)!;
+  if (b.cost !== undefined) patch.cost = asNumber(b.cost, "cost", { min: 0, max: 1_000_000 });
+  if (b.billingCycle !== undefined) patch.billingCycle = asEnum(b.billingCycle, "billingCycle", BILLING_CYCLES, true)!;
+  if (b.nextBillingDate !== undefined) patch.nextBillingDate = asDate(b.nextBillingDate, "nextBillingDate") ?? badRequest("Field 'nextBillingDate' must be a valid date.");
+  if (b.icon !== undefined) patch.icon = asTrimmedString(b.icon, "icon", 10, false) ?? null;
+  if (Object.keys(patch).length === 0) {
+    badRequest("Patch body must include at least one of: name, cost, billingCycle, nextBillingDate, icon.");
+  }
+  return patch;
+}
+
 /* ─── Notes ─── */
 
 const MAX_NOTE_LENGTH = 50_000;
@@ -213,4 +233,37 @@ export function validateNoteContent(body: unknown): string {
     badRequest(`Field 'content' must be at most ${MAX_NOTE_LENGTH} characters.`);
   }
   return content;
+}
+
+/* ─── Portfolio / Investments ─── */
+
+function validateInvestmentAsset(raw: unknown, index: number): InvestmentAsset {
+  const b = requireObject(raw, "Asset");
+  try {
+    return {
+      id: asTrimmedString(b.id, "id", 128, false) || randomUUID(),
+      name: asTrimmedString(b.name, "name", 200, true)!,
+      category: asEnum(b.category, "category", ASSET_CATEGORIES, true)!,
+      amount: asNumber(b.amount, "amount", { min: 0, max: 1_000_000_000 }),
+      investedAmount: asNumber(b.investedAmount, "investedAmount", { min: 0, max: 1_000_000_000 }),
+      quantity: b.quantity !== undefined && b.quantity !== null && b.quantity !== "" ? asNumber(b.quantity, "quantity", { min: 0 }) : undefined,
+      buyPrice: b.buyPrice !== undefined && b.buyPrice !== null && b.buyPrice !== "" ? asNumber(b.buyPrice, "buyPrice", { min: 0 }) : undefined,
+      currentPrice: b.currentPrice !== undefined && b.currentPrice !== null && b.currentPrice !== "" ? asNumber(b.currentPrice, "currentPrice", { min: 0 }) : undefined,
+      notes: asTrimmedString(b.notes, "notes", 1000, false),
+      createdAt: typeof b.createdAt === "number" ? b.createdAt : Date.now(),
+    };
+  } catch (error) {
+    if (error instanceof ApiError) throw new ApiError(400, `Asset ${index + 1}: ${error.message}`);
+    throw error;
+  }
+}
+
+// Whitelists and type-checks every asset in the portfolio, rather than
+// writing whatever shape the client sends straight to Firestore.
+export function validatePortfolioAssets(body: unknown): InvestmentAsset[] {
+  const b = requireObject(body, "Portfolio payload");
+  if (!Array.isArray(b.assets)) badRequest("Field 'assets' must be an array.");
+  const assets = b.assets as unknown[];
+  if (assets.length > MAX_PORTFOLIO_ASSETS) badRequest(`Field 'assets' must contain at most ${MAX_PORTFOLIO_ASSETS} items.`);
+  return assets.map((a, i) => validateInvestmentAsset(a, i));
 }
