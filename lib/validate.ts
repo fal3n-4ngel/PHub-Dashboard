@@ -1,8 +1,9 @@
 import { ApiError } from "./errors";
-import type { ExpenseEntry, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
+import type { ExpenseEntry, SubscriptionEntry, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
 
 const MEDIA_TYPES = ["movie", "show", "anime", "book"] as const;
 const MEDIA_STATUSES = ["plan_to_watch", "watching", "completed", "dropped"] as const;
+const BILLING_CYCLES = ["monthly", "yearly"] as const;
 
 export const MAX_EXPENSE_BATCH = 100;
 export const MAX_SYNC_ENTRIES = 5000;
@@ -183,4 +184,33 @@ export function validateSyncPayload(body: unknown): { source: SyncSource; entrie
   });
 
   return { source, entries };
+}
+
+/* ─── Subscriptions ─── */
+
+export function validateSubscriptionEntry(body: unknown): SubscriptionEntry {
+  const b = requireObject(body, "Subscription entry");
+  return {
+    name: asTrimmedString(b.name, "name", 200, true)!,
+    cost: asNumber(b.cost, "cost", { min: 0, max: 1_000_000 }),
+    billingCycle: asEnum(b.billingCycle, "billingCycle", BILLING_CYCLES, true)!,
+    nextBillingDate: asDate(b.nextBillingDate, "nextBillingDate") ?? badRequest("Field 'nextBillingDate' is required."),
+    icon: asTrimmedString(b.icon, "icon", 10, false) ?? null,
+  };
+}
+
+/* ─── Notes ─── */
+
+const MAX_NOTE_LENGTH = 50_000;
+
+export function validateNoteContent(body: unknown): string {
+  const b = requireObject(body, "Note");
+  if (b.content !== undefined && typeof b.content !== "string") {
+    badRequest("Field 'content' must be a string.");
+  }
+  const content = (b.content as string) || "";
+  if (content.length > MAX_NOTE_LENGTH) {
+    badRequest(`Field 'content' must be at most ${MAX_NOTE_LENGTH} characters.`);
+  }
+  return content;
 }

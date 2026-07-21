@@ -575,38 +575,97 @@ export async function deleteWatchlistItem(session: Session, id: string) {
   cacheInvalidate(watchlistCacheKey(session));
   return { id };
 }
-export interface SubscriptionRecord { id: string; name: string; cost: number; billingCycle: string; nextBillingDate: string; icon: string | null; createdAt: number; }
+export interface SubscriptionRecord { id: string; name: string; cost: number; billingCycle: "monthly" | "yearly"; nextBillingDate: string; icon: string | null; createdAt: number; }
 export interface NoteRecord { id: string; content: string; updatedAt: number; }
 
-export async function listSubscriptions(session: Session): Promise<SubscriptionRecord[]> {
-  const rows = await runOwnedQuery(session, "subscriptions");
-  return rows.map(({ id, data }) => ({
-    id, name: data.name as string, cost: data.cost as number, billingCycle: data.billingCycle as string,
-    nextBillingDate: data.nextBillingDate as string, icon: data.icon as string | null, createdAt: typeof data.createdAt === "number" ? data.createdAt : 0
-  })).sort((a, b) => b.createdAt - a.createdAt);
-}
-export async function createSubscription(session: Session, entry: any) {
-  const docData = { userId: session.uid, name: entry.name, cost: entry.cost, billingCycle: entry.billingCycle, nextBillingDate: entry.nextBillingDate, icon: entry.icon || null, createdAt: Date.now() };
-  const created = await fsFetch(session, "/subscriptions", { method: "POST", body: JSON.stringify({ fields: toFields(docData) }) });
-  return { id: idFromName(created.name) };
-}
-export async function deleteSubscription(session: Session, id: string) {
-  await fsFetch(session, docName(session, "subscriptions", assertDocId(id, "subscription")), { method: "DELETE" });
+const SUBSCRIPTION_CACHE_TTL = 30_000;
+
+function subscriptionCacheKey(session: Session): string {
+  return `subscriptions:${session.config.projectId}:${session.uid}`;
 }
 
+export async function listSubscriptions(session: Session): Promise<SubscriptionRecord[]> {
+  const cacheKey = subscriptionCacheKey(session);
+  const cached = cacheGet<SubscriptionRecord[]>(cacheKey);
+  if (cached) return cached;
+
+  const rows = await runOwnedQuery(session, "subscriptions");
+  const records = rows
+    .map(({ id, data }) => ({
+      id,
+      name: (data.name as string) || "Untitled",
+      cost: typeof data.cost === "number" ? data.cost : 0,
+      billingCycle: (data.billingCycle as SubscriptionRecord["billingCycle"]) || "monthly",
+      nextBillingDate: (data.nextBillingDate as string) || "",
+      icon: (data.icon as string) || null,
+      createdAt: typeof data.createdAt === "number" ? data.createdAt : 0,
+    }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  cacheSet(cacheKey, records, SUBSCRIPTION_CACHE_TTL);
+  return records;
+}
+
+export interface SubscriptionEntry {
+  name: string;
+  cost: number;
+  billingCycle: "monthly" | "yearly";
+  nextBillingDate: string;
+  icon?: string | null;
+}
+
+export async function createSubscription(session: Session, entry: SubscriptionEntry) {
+  const docData = {
+    userId: session.uid, // Partition by User UID; rules require it to match the token
+    name: entry.name,
+    cost: entry.cost,
+    billingCycle: entry.billingCycle,
+    nextBillingDate: entry.nextBillingDate,
+    icon: entry.icon || null,
+    createdAt: Date.now(),
+  };
+
+  const created = await fsFetch(session, `${docsRoot(session)}/subscriptions`, {
+    method: "POST",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+  return { id: idFromName(created.name) };
+}
+
+export async function deleteSubscription(session: Session, id: string) {
+  assertDocId(id, "subscription");
+
+  await fsFetch(session, `${docsRoot(session)}/subscriptions/${id}?currentDocument.exists=true`, {
+    method: "DELETE",
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+  return { id };
+}
+
+// Single doc per user (notes/{userId}), mirroring the watchlist doc shape —
+// ownership is enforced by the security rules matching the doc id to auth.uid.
 export async function getNote(session: Session): Promise<NoteRecord | null> {
   try {
-    const res = await fsFetch(session, docName(session, "notes", session.uid));
+    const res = await fsFetch(session, `${docsRoot(session)}/notes/${session.uid}`);
     const data = fromFields(res.fields || {});
     return { id: session.uid, content: (data.content as string) || "", updatedAt: (data.updatedAt as number) || 0 };
-  } catch (err: any) {
-    if (err.status === 404) return null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
 }
+
 export async function updateNote(session: Session, content: string) {
-  const docData = { userId: session.uid, content, updatedAt: Date.now() };
-  await fsFetch(session, docName(session, "notes", session.uid) + "?updateMask.fieldPaths=content&updateMask.fieldPaths=updatedAt", {
-    method: "PATCH", body: JSON.stringify({ fields: toFields(docData) })
+  const docData = { content, updatedAt: Date.now() };
+  const params = new URLSearchParams();
+  params.append("updateMask.fieldPaths", "content");
+  params.append("updateMask.fieldPaths", "updatedAt");
+
+  await fsFetch(session, `${docsRoot(session)}/notes/${session.uid}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
   });
 }

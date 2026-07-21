@@ -23,6 +23,25 @@ service cloud.firestore {
                          && request.auth.uid == userId;
     }
 
+    // Subscription docs are owned via their userId field, same pattern as expenses.
+    match /subscriptions/{subscriptionId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // Single scratch-note doc per user, keyed by uid.
+    match /notes/{userId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
     // Legacy per-item watchlist collection: readable by its owner so the
     // one-time lazy migration can run; no new writes are ever allowed.
     match /watchlist/{itemId} {
