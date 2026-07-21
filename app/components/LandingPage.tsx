@@ -114,6 +114,69 @@ function BentoLogo({ size = 22, color = "currentColor" }: { size?: number; color
 
 export default function LandingPage({ onLogin, authError, firebaseAuthReady }: LandingPageProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [coords, setCoords] = useState<any>(null);
+
+  useEffect(() => {
+    const updateCoords = () => {
+      const container = document.getElementById("dg-container");
+      if (!container) return;
+      const cRect = container.getBoundingClientRect();
+
+      const getR = (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) return { x: 0, y: 0 };
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.right - cRect.left,
+          y: r.top + r.height / 2 - cRect.top
+        };
+      };
+
+      const getL = (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) return { x: 0, y: 0 };
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.left - cRect.left,
+          y: r.top + r.height / 2 - cRect.top
+        };
+      };
+
+      const c1_1 = getR("dg-c1-n1");
+      const c1_2 = getR("dg-c1-n2");
+      const c2_1 = getL("dg-c2-n1");
+      const c2_2 = getL("dg-c2-n2");
+      const c2_3 = getL("dg-c2-n3");
+
+      const c2_1_r = getR("dg-c2-n1");
+      const c2_2_r = getR("dg-c2-n2");
+      const c2_3_r = getR("dg-c2-n3");
+      const hub_l = getL("dg-hub");
+      const hub_r = getR("dg-hub");
+
+      const c4_1 = getL("dg-c4-n1");
+      const c4_2 = getL("dg-c4-n2");
+
+      const midX = (c1_1.x + c2_1.x) / 2;
+      const midY = (c1_1.y + c1_2.y) / 2;
+
+      setCoords({
+        c1_1, c1_2, c2_1, c2_2, c2_3,
+        c2_1_r, c2_2_r, c2_3_r, hub_l, hub_r,
+        c4_1, c4_2,
+        midX, midY
+      });
+    };
+
+    // Small delay to let fonts/layouts settle
+    const timer = setTimeout(updateCoords, 250);
+    window.addEventListener("resize", updateCoords);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", updateCoords);
+    };
+  }, []);
 
   return (
     <div className="landing-container">
@@ -351,16 +414,32 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
 
         /* ─── How it works diagram ─── */
         .diagram-container {
-          max-width: 1000px;
+          max-width: 1040px;
           margin: 0 auto 80px;
+          background-color: #eae8e0;
+          background-image: radial-gradient(#c4c2ba 1.5px, transparent 1.5px);
+          background-size: 10px 10px;
+          border: 1px solid #d1cfc7;
+          border-radius: 20px;
+          padding: 16px;
+          box-shadow: 0 10px 30px -10px rgba(110, 108, 100, 0.08);
+        }
+
+        .diagram-inner {
           background-color: #ffffff;
           border: 1px solid #e5e3db;
-          border-radius: 16px;
-          padding: 48px;
+          border-radius: 12px;
+          padding: 40px;
           position: relative;
-          box-shadow: 0 10px 30px -10px rgba(110, 108, 100, 0.08);
-          background-image: radial-gradient(#eae8e0 1.5px, transparent 1.5px);
-          background-size: 20px 20px;
+          box-shadow: 0 4px 16px rgba(110, 108, 100, 0.03);
+        }
+
+        .diagram-desktop {
+          display: block;
+        }
+
+        .diagram-mobile {
+          display: none;
         }
 
         .diagram-grid {
@@ -369,85 +448,112 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           align-items: center;
           position: relative;
           z-index: 2;
+          height: 400px;
         }
 
         .diagram-column {
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          justify-content: center;
+          gap: 36px;
           width: 210px;
           min-width: 0;
+          z-index: 2;
+        }
+
+        .diagram-column.column-middle {
+          gap: 22px;
+          width: 230px;
+        }
+
+        .diagram-column.column-logo {
+          width: 120px;
+          align-items: center;
         }
 
         .diagram-node {
           background-color: #ffffff;
           border: 1px solid #e5e3db;
           border-radius: 10px;
-          padding: 12px 14px;
-          box-shadow: 0 2px 8px -2px rgba(110, 108, 100, 0.07);
+          padding: 10px 14px;
+          box-shadow: 0 4px 12px -2px rgba(110, 108, 100, 0.05);
           display: flex;
           align-items: center;
           gap: 10px;
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          width: 100%;
+          box-sizing: border-box;
         }
 
         .diagram-node:hover {
           transform: translateY(-2px);
-          box-shadow: 0 6px 18px -4px rgba(110, 108, 100, 0.14);
+          border-color: #c4c2ba;
+          box-shadow: 0 6px 18px -4px rgba(110, 108, 100, 0.12);
         }
 
         .node-icon {
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 14px;
+          font-size: 13px;
           flex-shrink: 0;
         }
 
-        .node-text { text-align: left; }
+        .node-text {
+          text-align: left;
+          min-width: 0;
+        }
 
         .node-title {
-          font-size: 12px;
+          font-size: 11.5px;
           font-weight: 700;
           color: #1c1b18;
-          margin-bottom: 2px;
+          margin-bottom: 1px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .node-desc {
-          font-size: 10px;
+          font-size: 9.5px;
           color: #6e6c64;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .center-hub {
-          width: 96px;
-          height: 96px;
+          width: 84px;
+          height: 84px;
           background-color: #1c1b18;
-          border-radius: 50%;
+          border-radius: 20px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           color: #ffffff;
-          box-shadow: 0 8px 24px rgba(28, 27, 24, 0.2);
+          box-shadow: 0 8px 24px rgba(28, 27, 24, 0.16);
           position: relative;
-          gap: 4px;
+          gap: 3px;
         }
 
         .center-hub-ring {
           position: absolute;
-          top: -7px; left: -7px; right: -7px; bottom: -7px;
-          border: 1.5px dashed rgba(28,27,24,0.25);
-          border-radius: 50%;
-          animation: spin-clockwise 20s linear infinite;
+          top: -6px; left: -6px; right: -6px; bottom: -6px;
+          border: 1.5px dashed rgba(28,27,24,0.2);
+          border-radius: 24px;
+          animation: spin-clockwise 25s linear infinite;
         }
 
         .hub-label {
-          font-size: 10px;
+          font-family: monospace;
+          font-size: 9px;
           font-weight: 700;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
         }
 
         .connections-svg {
@@ -458,14 +564,79 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           pointer-events: none;
         }
 
+        @keyframes flowDash {
+          to {
+            stroke-dashoffset: -20;
+          }
+        }
+
+        .connections-svg path {
+          stroke: #3b82f6;
+          stroke-width: 1.5;
+          stroke-dasharray: 5 5;
+          animation: flowDash 1.2s linear infinite;
+        }
+
+        /* ─── Mobile Diagram styles ─── */
+        @media (max-width: 768px) {
+          .diagram-desktop {
+            display: none;
+          }
+
+          .diagram-mobile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            position: relative;
+            z-index: 2;
+          }
+
+          .diagram-container {
+            padding: 30px 16px;
+          }
+
+          .mobile-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            gap: 10px;
+          }
+
+          .mobile-row {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+          }
+
+          .mobile-row > * {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .mobile-flow-line {
+            width: 2px;
+            height: 24px;
+            background: repeating-linear-gradient(to bottom, #c4c2ba, #c4c2ba 3px, transparent 3px, transparent 6px);
+          }
+
+          .mobile-node-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #1c1b18;
+          }
+        }
+
         /* ─── Diagram labels ─── */
         .feature-num {
           font-family: monospace;
-          font-size: 11px;
+          font-size: 10px;
           color: #c4c2ba;
           font-weight: 600;
           display: block;
-          margin-bottom: 16px;
+          margin-bottom: 8px;
+          letter-spacing: 0.5px;
         }
 
         /* ─── Stats bar ─── */
@@ -1380,154 +1551,213 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           <span className="hero-pill">🌸 AniList sync</span>
           <span className="hero-pill">🎯 Trakt sync</span>
           <span className="hero-pill">🎞️ Letterboxd import</span>
-          <span className="hero-pill">🤖 Custom ChatGPT GPT</span>
+          <span className="hero-pill">🤖 Custom LLM Sync (Gemini/ChatGPT)</span>
         </div>
       </section>
 
       {/* ─── How it works ─── */}
       <section id="how-it-works" className="hero-section" style={{ paddingTop: 0 }}>
-        <div className="diagram-container">
-          {/* Animated connection lines */}
-          <svg className="connections-svg" viewBox="0 0 1000 480" preserveAspectRatio="none">
-            {/* Left incoming → hub */}
-            <path d="M 220 50  Q 375 50,  460 240" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 220 130 Q 360 130, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 220 210 Q 360 210, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 220 290 Q 360 290, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 220 370 Q 375 370, 460 240" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            {/* Hub → right canvas */}
-            <path d="M 540 240 Q 625 50,  780 55"  stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 540 240 Q 625 130, 780 135" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 540 240 Q 625 210, 780 215" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 540 240 Q 625 290, 780 295" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
-            <path d="M 540 240 Q 625 370, 780 375" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-          </svg>
+        <div className="diagram-container" id="dg-container">
+          <div className="diagram-inner">
+          
+          {/* ── DESKTOP VIEW ── */}
+          <div className="diagram-desktop">
+            {coords && (
+              <svg className="connections-svg">
+                {/* Column 1 → Merge Point */}
+                <path d={`M ${coords.c1_1.x} ${coords.c1_1.y} C ${(coords.c1_1.x + coords.midX)/2} ${coords.c1_1.y}, ${(coords.c1_1.x + coords.midX)/2} ${coords.midY}, ${coords.midX} ${coords.midY}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.c1_2.x} ${coords.c1_2.y} C ${(coords.c1_2.x + coords.midX)/2} ${coords.c1_2.y}, ${(coords.c1_2.x + coords.midX)/2} ${coords.midY}, ${coords.midX} ${coords.midY}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <circle cx={coords.midX} cy={coords.midY} r="3" fill="#c4c2ba" />
 
-          <div className="diagram-grid" style={{ minHeight: "440px" }}>
-            {/* ── LEFT: Data sources ── */}
-            <div className="diagram-column" style={{ gap: "10px" }}>
-              <span className="feature-num" style={{ alignSelf: "flex-start", marginBottom: "-4px" }}>INCOMING</span>
+                {/* Merge Point → Column 2 Lefts */}
+                <path d={`M ${coords.midX} ${coords.midY} C ${(coords.midX + coords.c2_1.x)/2} ${coords.midY}, ${(coords.midX + coords.c2_1.x)/2} ${coords.c2_1.y}, ${coords.c2_1.x} ${coords.c2_1.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.midX} ${coords.midY} C ${(coords.midX + coords.c2_2.x)/2} ${coords.midY}, ${(coords.midX + coords.c2_2.x)/2} ${coords.c2_2.y}, ${coords.c2_2.x} ${coords.c2_2.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.midX} ${coords.midY} C ${(coords.midX + coords.c2_3.x)/2} ${coords.midY}, ${(coords.midX + coords.c2_3.x)/2} ${coords.c2_3.y}, ${coords.c2_3.x} ${coords.c2_3.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
 
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#ede9fe", fontSize: "15px" }}>🎯</div>
-                <div className="node-text">
-                  <div className="node-title">Trakt API</div>
-                  <div className="node-desc">Shows & movies — OAuth sync</div>
+                {/* Column 2 Rights → Hub Left */}
+                <path d={`M ${coords.c2_1_r.x} ${coords.c2_1_r.y} C ${(coords.c2_1_r.x + coords.hub_l.x)/2} ${coords.c2_1_r.y}, ${(coords.c2_1_r.x + coords.hub_l.x)/2} ${coords.hub_l.y}, ${coords.hub_l.x} ${coords.hub_l.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.c2_2_r.x} ${coords.c2_2_r.y} C ${(coords.c2_2_r.x + coords.hub_l.x)/2} ${coords.c2_2_r.y}, ${(coords.c2_2_r.x + coords.hub_l.x)/2} ${coords.hub_l.y}, ${coords.hub_l.x} ${coords.hub_l.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.c2_3_r.x} ${coords.c2_3_r.y} C ${(coords.c2_3_r.x + coords.hub_l.x)/2} ${coords.c2_3_r.y}, ${(coords.c2_3_r.x + coords.hub_l.x)/2} ${coords.hub_l.y}, ${coords.hub_l.x} ${coords.hub_l.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+
+                {/* Hub Right → Column 4 Lefts */}
+                <path d={`M ${coords.hub_r.x} ${coords.hub_r.y} C ${(coords.hub_r.x + coords.c4_1.x)/2} ${coords.hub_r.y}, ${(coords.hub_r.x + coords.c4_1.x)/2} ${coords.c4_1.y}, ${coords.c4_1.x} ${coords.c4_1.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+                <path d={`M ${coords.hub_r.x} ${coords.hub_r.y} C ${(coords.hub_r.x + coords.c4_2.x)/2} ${coords.hub_r.y}, ${(coords.hub_r.x + coords.c4_2.x)/2} ${coords.c4_2.y}, ${coords.c4_2.x} ${coords.c4_2.y}`} stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="3 4" fill="none" />
+              </svg>
+            )}
+
+            <div className="diagram-grid">
+              {/* Column 1: Incoming */}
+              <div className="diagram-column">
+                <span className="feature-num">INCOMING</span>
+                
+                <div className="diagram-node" id="dg-c1-n1">
+                  <div className="node-icon" style={{ backgroundColor: "#ede9fe" }}>☁️</div>
+                  <div className="node-text">
+                    <div className="node-title">External Sync</div>
+                    <div className="node-desc">Trakt & AniList APIs</div>
+                  </div>
+                </div>
+
+                <div className="diagram-node" id="dg-c1-n2">
+                  <div className="node-icon" style={{ backgroundColor: "#fef9c3" }}>✍️</div>
+                  <div className="node-text">
+                    <div className="node-title">Local Entries</div>
+                    <div className="node-desc">Expenses, logs & notes</div>
+                  </div>
                 </div>
               </div>
 
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#dbeafe", fontSize: "15px" }}>🌸</div>
-                <div className="node-text">
-                  <div className="node-title">AniList OAuth</div>
-                  <div className="node-desc">Anime progress sync</div>
+              {/* Column 2: What Phub Handles */}
+              <div className="diagram-column column-middle">
+                <span className="feature-num">WHAT PHUB HANDLES</span>
+
+                <div className="diagram-node" id="dg-c2-n1">
+                  <div className="node-icon" style={{ backgroundColor: "#e39282" }}>📊</div>
+                  <div className="node-text">
+                    <div className="node-title">Expense Analytics</div>
+                    <div className="node-desc">Salary cycles & categories</div>
+                  </div>
+                </div>
+
+                <div className="diagram-node" id="dg-c2-n2">
+                  <div className="node-icon" style={{ backgroundColor: "#dbeafe" }}>🎬</div>
+                  <div className="node-text">
+                    <div className="node-title">Media Sync engine</div>
+                    <div className="node-desc">Trakt OAuth updates</div>
+                  </div>
+                </div>
+
+                <div className="diagram-node" id="dg-c2-n3">
+                  <div className="node-icon" style={{ backgroundColor: "#f0fdf4" }}>📚</div>
+                  <div className="node-text">
+                    <div className="node-title">Reading library</div>
+                    <div className="node-desc">OpenLibrary cataloging</div>
+                  </div>
                 </div>
               </div>
 
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#dcfce7", fontSize: "15px" }}>🎞️</div>
-                <div className="node-text">
-                  <div className="node-title">Letterboxd CSV</div>
-                  <div className="node-desc">Watch history file import</div>
+              {/* Column 3: Phub Logo Hub */}
+              <div className="diagram-column column-logo">
+                <span className="feature-num">PHUB ENGINE</span>
+                <div className="center-hub" id="dg-hub">
+                  <div className="center-hub-ring" />
+                  <BentoLogo size={24} color="#ffffff" />
+                  <span className="hub-label">Hub</span>
                 </div>
               </div>
 
-              <div className="diagram-node" style={{ border: "1.5px solid #10b981", boxShadow: "0 4px 12px rgba(16,185,129,0.1)" }}>
-                <div className="node-icon" style={{ backgroundColor: "#10b981", color: "#fff", fontSize: "15px" }}>💬</div>
-                <div className="node-text">
-                  <div className="node-title">ChatGPT Mobile</div>
-                  <div className="node-desc">Custom GPT integration</div>
+              {/* Column 4: Canvas / Result */}
+              <div className="diagram-column">
+                <span className="feature-num">RESULT</span>
+
+                <div className="diagram-node" id="dg-c4-n1">
+                  <div className="node-icon" style={{ backgroundColor: "#d1b89a" }}>📱</div>
+                  <div className="node-text">
+                    <div className="node-title">Dashboard Canvas</div>
+                    <div className="node-desc">Interactive dashboard UI</div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#fef9c3", fontSize: "15px" }}>✏️</div>
-                <div className="node-text">
-                  <div className="node-title">Manual Entry</div>
-                  <div className="node-desc">Expenses, books, notes</div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── CENTER: Hub ── */}
-            <div className="center-hub" style={{ alignSelf: "center" }}>
-              <div className="center-hub-ring" />
-              <BentoLogo size={28} color="#ffffff" />
-              <span className="hub-label">Hub</span>
-            </div>
-
-            {/* ── RIGHT: Your canvas ── */}
-            <div className="diagram-column" style={{ gap: "10px" }}>
-              <span className="feature-num" style={{ alignSelf: "flex-start", marginBottom: "-4px" }}>YOUR CANVAS</span>
-
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#d1b89a", fontSize: "15px" }}>🎬</div>
-                <div className="node-text">
-                  <div className="node-title">Unified Watchlist</div>
-                  <div className="node-desc">Anime · movies · shows</div>
-                </div>
-              </div>
-
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#fde8e4", fontSize: "15px" }}>📊</div>
-                <div className="node-text">
-                  <div className="node-title">Bento Analytics</div>
-                  <div className="node-desc">Spending breakdowns</div>
-                </div>
-              </div>
-
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#fee2e2", fontSize: "15px" }}>📈</div>
-                <div className="node-text">
-                  <div className="node-title">Salary Cycle View</div>
-                  <div className="node-desc">Custom pay-period trends</div>
-                </div>
-              </div>
-
-              <div className="diagram-node" style={{ border: "1.5px solid #10b981" }}>
-                <div className="node-icon" style={{ backgroundColor: "#10b981", color: "#fff", fontSize: "15px" }}>💡</div>
-                <div className="node-text">
-                  <div className="node-title">Intelligent AI</div>
-                  <div className="node-desc">Recommendations & tips</div>
-                </div>
-              </div>
-
-              <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#f0fdf4", fontSize: "15px" }}>📚</div>
-                <div className="node-text">
-                  <div className="node-title">Book Library & Notes</div>
-                  <div className="node-desc">Reading list + scratchpad</div>
+                <div className="diagram-node" id="dg-c4-n2" style={{ border: "1.5px solid #3b82f6", boxShadow: "0 4px 12px rgba(59,130,246,0.08)" }}>
+                  <div className="node-icon" style={{ backgroundColor: "#3b82f6", color: "#fff" }}>💬</div>
+                  <div className="node-text">
+                    <div className="node-title">LLM Sync client</div>
+                    <div className="node-desc">Gemini, ChatGPT, Claude</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* ── MOBILE VIEW (Clean stacked workflow) ── */}
+          <div className="diagram-mobile">
+            {/* Step 1: Incoming */}
+            <div className="mobile-group">
+              <span className="feature-num">INCOMING</span>
+              <div className="mobile-row">
+                <div className="diagram-node">
+                  <div className="node-title" style={{ fontSize: "11px", display: "flex", gap: "6px" }}>☁️ <span>APIs</span></div>
+                </div>
+                <div className="diagram-node">
+                  <div className="node-title" style={{ fontSize: "11px", display: "flex", gap: "6px" }}>✍️ <span>Local</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mobile-flow-line" />
+
+            {/* Step 2: Processing */}
+            <div className="mobile-group">
+              <span className="feature-num">WHAT PHUB HANDLES</span>
+              <div className="diagram-node">
+                <div className="node-icon" style={{ backgroundColor: "#e39282", width: "20px", height: "20px", fontSize: "11px" }}>📊</div>
+                <span className="mobile-node-title">Expense Analytics</span>
+              </div>
+              <div className="diagram-node">
+                <div className="node-icon" style={{ backgroundColor: "#dbeafe", width: "20px", height: "20px", fontSize: "11px" }}>🎬</div>
+                <span className="mobile-node-title">Media Sync engine</span>
+              </div>
+              <div className="diagram-node">
+                <div className="node-icon" style={{ backgroundColor: "#f0fdf4", width: "20px", height: "20px", fontSize: "11px" }}>📚</div>
+                <span className="mobile-node-title">Reading library</span>
+              </div>
+            </div>
+
+            <div className="mobile-flow-line" />
+
+            {/* Step 3: Logo */}
+            <div className="mobile-group">
+              <span className="feature-num">PHUB ENGINE</span>
+              <div className="center-hub">
+                <BentoLogo size={22} color="#ffffff" />
+                <span className="hub-label" style={{ fontSize: "8px" }}>Hub</span>
+              </div>
+            </div>
+
+            <div className="mobile-flow-line" />
+
+            {/* Step 4: Result */}
+            <div className="mobile-group">
+              <span className="feature-num">RESULT</span>
+              <div className="mobile-row">
+                <div className="diagram-node">
+                  <span className="mobile-node-title">📱 Dashboard UI</span>
+                </div>
+                <div className="diagram-node" style={{ border: "1px solid #3b82f6" }}>
+                  <span className="mobile-node-title" style={{ color: "#1d4ed8" }}>💬 Gemini / GPT</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          </div>
         </div>
       </section>
 
-      {/* ─── ChatGPT integration section ─── */}
+      {/* ─── ChatGPT & LLM integration section ─── */}
       <section id="chatgpt" className="setup-section">
         <div className="setup-container">
           <div>
-            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec", marginBottom: "28px" }}>🤖 ChatGPT Custom GPT</span>
+            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec", marginBottom: "28px" }}>🤖 OpenAPI compliant</span>
             <h2 className="hero-title" style={{ fontSize: "40px", textAlign: "left", marginBottom: "20px" }}>
-              Text it like a friend.<br />
-              <span className="serif-italic">It logs it like a spreadsheet.</span>
+              Connect any LLM.<br />
+              <span className="serif-italic">Gemini, ChatGPT, or Claude.</span>
             </h2>
             <p className="step-desc" style={{ fontSize: "14px", marginBottom: "32px", maxWidth: "440px" }}>
-              Every route in this API doubles as a ChatGPT Action. Import the schema once, paste in your token, and logging an expense or updating your watchlist is just a text message away.
+              Every route in this API exposes a clean OpenAPI spec. Import the schema into Gemini Gems, ChatGPT Actions, or Claude Projects to log expenses, update your watchlist, or query analytics in plain English.
             </p>
             <ul className="gpt-check-list">
               <li className="gpt-check-item">
                 <span className="gpt-check-icon">✓</span>
-                No app to open — talk to it from ChatGPT on your phone
+                Works with Gemini Gems, ChatGPT Custom GPTs, and Claude Projects
               </li>
               <li className="gpt-check-item">
                 <span className="gpt-check-icon">✓</span>
-                Runs on your own OpenAPI schema — no middleman server reading your data
+                Use LLMs on your phone or laptop to track everything on the go
               </li>
               <li className="gpt-check-item">
                 <span className="gpt-check-icon">✓</span>
-                Understands natural language — "spent 450 on lunch" just works
+                Natural language recognition — "I spent 400 on transit" maps instantly
               </li>
             </ul>
             <a href="/gpt" className="hero-cta-primary" style={{ display: "inline-flex" }}>
@@ -1555,36 +1785,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
       {/* ─── Setup section ─── */}
       <section id="setup" className="setup-section">
         <div className="setup-container">
-          <div>
-            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec", marginBottom: "28px" }}>Minimal Setup</span>
-            <h2 className="hero-title" style={{ fontSize: "40px", textAlign: "left", marginBottom: "40px" }}>
-              If you can clone a repo,<br />
-              <span className="serif-italic">you can self-host this.</span>
-            </h2>
-            <div className="setup-step">
-              <span className="step-number">1</span>
-              <div>
-                <h4 className="step-title">Fork & deploy to Vercel</h4>
-                <p className="step-desc">Click the deploy button in the GitHub README. Vercel sets up CI/CD automatically in under 2 minutes.</p>
-              </div>
-            </div>
-            <div className="setup-step">
-              <span className="step-number">2</span>
-              <div>
-                <h4 className="step-title">Create a Firebase project</h4>
-                <p className="step-desc">Add your Firebase config as Vercel env vars. Firestore and Auth initialize on first login — no manual schema setup.</p>
-              </div>
-            </div>
-            <div className="setup-step">
-              <span className="step-number">3</span>
-              <div>
-                <h4 className="step-title">Connect your API keys</h4>
-                <p className="step-desc">Optionally add AniList, Trakt, and TMDb keys to unlock full sync. Everything else works without them.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="browser-mockup">
+                    <div className="browser-mockup">
             <div className="browser-header">
               <div className="browser-dot" style={{ backgroundColor: "#ff5f56" }} />
               <div className="browser-dot" style={{ backgroundColor: "#ffbd2e" }} />
@@ -1626,6 +1827,36 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
               </div>
             </div>
           </div>
+          <div>
+            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec", marginBottom: "28px" }}>Minimal Setup</span>
+            <h2 className="hero-title" style={{ fontSize: "40px", textAlign: "left", marginBottom: "40px" }}>
+              If you can clone a repo,<br />
+              <span className="serif-italic">you can self-host this.</span>
+            </h2>
+            <div className="setup-step">
+              <span className="step-number">1</span>
+              <div>
+                <h4 className="step-title">Fork & deploy to Vercel</h4>
+                <p className="step-desc">Click the deploy button in the GitHub README. Vercel sets up CI/CD automatically in under 2 minutes.</p>
+              </div>
+            </div>
+            <div className="setup-step">
+              <span className="step-number">2</span>
+              <div>
+                <h4 className="step-title">Create a Firebase project</h4>
+                <p className="step-desc">Add your Firebase config as Vercel env vars. Firestore and Auth initialize on first login — no manual schema setup.</p>
+              </div>
+            </div>
+            <div className="setup-step">
+              <span className="step-number">3</span>
+              <div>
+                <h4 className="step-title">Connect your API keys</h4>
+                <p className="step-desc">Optionally add AniList, Trakt, and TMDb keys to unlock full sync. Everything else works without them.</p>
+              </div>
+            </div>
+          </div>
+
+
         </div>
       </section>
 

@@ -133,7 +133,7 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>Personal Hub</span>
+            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>PHub Dashboard</span>
           </div>
           <a href="/" className="nav-link" style={{ marginBottom: 0 }}>← Back to dashboard</a>
         </div>
@@ -213,10 +213,8 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
               </button>
             )}
 
-            <div style={{ marginTop: "14px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#92400e", lineHeight: 1.6 }}>
-              <strong>Tokens expire after about 1 hour.</strong> When your GPT starts getting
-              &ldquo;Unauthorized&rdquo; errors, come back here, copy a fresh token, and paste it into the
-              action&apos;s API-key field again. Treat the token like a password — don&apos;t share the GPT.
+            <div style={{ marginTop: "14px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#065f46", lineHeight: 1.6 }}>
+              <strong>Tokens are persistent.</strong> The generated token is long-lived and stays active until explicitly revoked or refreshed. You don&apos;t need to update it every hour. Treat the token like a password — do not share your GPT.
             </div>
           </div>
         </div>
