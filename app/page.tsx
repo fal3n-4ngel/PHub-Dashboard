@@ -1459,12 +1459,6 @@ export default function Dashboard() {
         {/* Header */}
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-            <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
-              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>DATABASE</span>
-              <span style={{ fontWeight: 600 }}>Firestore</span>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e" }}></span>
-              <span style={{ color: "#22c55e", fontWeight: 600 }}>Active</span>
-            </div>
             <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "4px 10px", display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}>
               <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>CURRENCY</span>
               <select value={currency} onChange={(e) => { setCurrency(e.target.value); localStorage.setItem("preferred_currency", e.target.value); }} style={{ border: "none", background: "transparent", fontWeight: 600, outline: "none", cursor: "pointer", fontSize: "11px" }}>
@@ -1475,18 +1469,6 @@ export default function Dashboard() {
                 <option value="¥">JPY (¥)</option>
                 <option value="₩">KRW (₩)</option>
               </select>
-            </div>
-            {anilistUser && (
-              <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
-                <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>ANILIST</span>
-                <span style={{ fontWeight: 600 }}>{anilistUser.name}</span>
-                <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#3b82f6" }}></span>
-                <span style={{ color: "#3b82f6", fontWeight: 600 }}>Connected</span>
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500 }}>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e" }}></span>
-              All systems operational
             </div>
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
