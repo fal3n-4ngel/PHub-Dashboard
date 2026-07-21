@@ -6,6 +6,25 @@ interface LandingPageProps {
   firebaseAuthReady: boolean;
 }
 
+/* ─── New logo: bento-grid SVG ─── */
+function BentoLogo({ size = 22, color = "currentColor" }: { size?: number; color?: string }) {
+  const gap = size * 0.08;
+  const cell = (size - gap * 3) / 2;
+  const r = size * 0.12;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* top-left */}
+      <rect x={gap} y={gap} width={cell} height={cell} rx={r} fill={color} />
+      {/* top-right */}
+      <rect x={gap * 2 + cell} y={gap} width={cell} height={cell} rx={r} fill={color} opacity="0.55" />
+      {/* bottom-left */}
+      <rect x={gap} y={gap * 2 + cell} width={cell} height={cell} rx={r} fill={color} opacity="0.55" />
+      {/* bottom-right */}
+      <rect x={gap * 2 + cell} y={gap * 2 + cell} width={cell} height={cell} rx={r} fill={color} opacity="0.85" />
+    </svg>
+  );
+}
+
 export default function LandingPage({ onLogin, authError, firebaseAuthReady }: LandingPageProps) {
   return (
     <div className="landing-container">
@@ -21,29 +40,30 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           position: relative;
         }
 
-        /* Header Navigation */
+        /* ─── Header ─── */
         .landing-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 24px 80px;
+          padding: 20px 80px;
           max-width: 1300px;
           margin: 0 auto;
           position: sticky;
           top: 0;
-          background-color: rgba(244, 243, 236, 0.9);
-          backdrop-filter: blur(8px);
+          background-color: rgba(244, 243, 236, 0.92);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
           z-index: 1000;
-          border-bottom: 1px solid rgba(229, 227, 219, 0.5);
+          border-bottom: 1px solid rgba(229, 227, 219, 0.6);
         }
 
         .landing-logo {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 9px;
           font-weight: 700;
-          font-size: 18px;
-          letter-spacing: -0.5px;
+          font-size: 17px;
+          letter-spacing: -0.4px;
           text-decoration: none;
           color: #1c1b18;
         }
@@ -51,6 +71,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         .landing-nav {
           display: flex;
           gap: 32px;
+          align-items: center;
         }
 
         .landing-nav-link {
@@ -78,6 +99,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           align-items: center;
           gap: 8px;
           transition: transform 0.2s, background-color 0.2s;
+          font-family: inherit;
         }
 
         .login-btn:hover {
@@ -86,31 +108,23 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         }
 
         .login-btn:disabled {
-          opacity: 0.6;
+          opacity: 0.55;
           cursor: not-allowed;
+          transform: none;
         }
 
-        .login-arrow {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 16px;
-          height: 16px;
-          background-color: rgba(255, 255, 255, 0.2);
-          border-radius: 50%;
-          font-size: 10px;
-        }
-
-        /* Hero Section */
+        /* ─── Hero ─── */
         .hero-section {
-          padding: 80px 24px 60px;
+          padding: 90px 24px 60px;
           max-width: 1100px;
           margin: 0 auto;
           text-align: center;
         }
 
         .hero-badge {
-          display: inline-block;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
           font-family: monospace;
           font-size: 10px;
           text-transform: uppercase;
@@ -121,14 +135,16 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           border-radius: 9999px;
           margin-bottom: 28px;
           font-weight: 600;
+          border: 1px solid #e5e3db;
         }
 
         .hero-title {
-          font-size: 56px;
+          font-size: 58px;
           font-weight: 700;
-          line-height: 1.05;
-          letter-spacing: -2px;
-          margin-bottom: 12px;
+          line-height: 1.04;
+          letter-spacing: -2.5px;
+          margin-bottom: 16px;
+          color: #1c1b18;
         }
 
         .serif-italic {
@@ -140,12 +156,90 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         .hero-subtitle {
           font-size: 16px;
           color: #6e6c64;
-          max-width: 600px;
+          max-width: 580px;
           margin: 0 auto 40px;
-          line-height: 1.5;
+          line-height: 1.6;
         }
 
-        /* Diagram Block */
+        .hero-cta-row {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .hero-cta-primary {
+          background-color: #1c1b18;
+          color: #fff;
+          border: none;
+          border-radius: 9999px;
+          padding: 13px 28px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-family: inherit;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .hero-cta-primary:hover {
+          background-color: #31302b;
+          transform: translateY(-1px);
+        }
+
+        .hero-cta-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .hero-cta-secondary {
+          background-color: transparent;
+          color: #1c1b18;
+          border: 1.5px solid #d1cfc7;
+          border-radius: 9999px;
+          padding: 13px 28px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-family: inherit;
+          text-decoration: none;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .hero-cta-secondary:hover {
+          border-color: #1c1b18;
+          background-color: rgba(28,27,24,0.04);
+        }
+
+        /* ─── Feature Pills ─── */
+        .hero-pills {
+          display: flex;
+          gap: 8px;
+          justify-content: center;
+          flex-wrap: wrap;
+          margin-top: 28px;
+        }
+
+        .hero-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11.5px;
+          color: #6e6c64;
+          background-color: #fff;
+          border: 1px solid #e5e3db;
+          border-radius: 9999px;
+          padding: 5px 12px;
+          font-weight: 500;
+        }
+
+        /* ─── How it works diagram ─── */
         .diagram-container {
           max-width: 1000px;
           margin: 0 auto 80px;
@@ -170,25 +264,26 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         .diagram-column {
           display: flex;
           flex-direction: column;
-          gap: 20px;
-          width: 220px;
+          gap: 14px;
+          width: 210px;
+          min-width: 0;
         }
 
         .diagram-node {
           background-color: #ffffff;
           border: 1px solid #e5e3db;
-          border-radius: 12px;
-          padding: 16px;
-          box-shadow: 0 4px 12px -2px rgba(110, 108, 100, 0.04);
+          border-radius: 10px;
+          padding: 12px 14px;
+          box-shadow: 0 2px 8px -2px rgba(110, 108, 100, 0.07);
           display: flex;
           align-items: center;
-          gap: 12px;
-          transition: transform 0.2s ease, border-color 0.2s ease;
+          gap: 10px;
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         .diagram-node:hover {
           transform: translateY(-2px);
-          border-color: #c4c2ba;
+          box-shadow: 0 6px 18px -4px rgba(110, 108, 100, 0.14);
         }
 
         .node-icon {
@@ -199,11 +294,10 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           align-items: center;
           justify-content: center;
           font-size: 14px;
+          flex-shrink: 0;
         }
 
-        .node-text {
-          text-align: left;
-        }
+        .node-text { text-align: left; }
 
         .node-title {
           font-size: 12px;
@@ -217,10 +311,9 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           color: #6e6c64;
         }
 
-        /* Center Hub Node */
         .center-hub {
-          width: 100px;
-          height: 100px;
+          width: 96px;
+          height: 96px;
           background-color: #1c1b18;
           border-radius: 50%;
           display: flex;
@@ -230,75 +323,145 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           color: #ffffff;
           box-shadow: 0 8px 24px rgba(28, 27, 24, 0.2);
           position: relative;
+          gap: 4px;
         }
 
         .center-hub-ring {
           position: absolute;
-          top: -6px;
-          left: -6px;
-          right: -6px;
-          bottom: -6px;
-          border: 1.5px dashed #1c1b18;
+          top: -7px; left: -7px; right: -7px; bottom: -7px;
+          border: 1.5px dashed rgba(28,27,24,0.25);
           border-radius: 50%;
           animation: spin-clockwise 20s linear infinite;
         }
 
-        .hub-title {
-          font-size: 11px;
+        .hub-label {
+          font-size: 10px;
           font-weight: 700;
-          margin-top: 6px;
           letter-spacing: 0.5px;
         }
 
-        /* Dotted Connections SVG */
         .connections-svg {
           position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
+          top: 0; left: 0;
+          width: 100%; height: 100%;
           z-index: 1;
           pointer-events: none;
         }
 
-        /* Feature Grid Section */
+        /* ─── Feature grid ─── */
+        .features-section {
+          padding: 0 24px 80px;
+          max-width: 1100px;
+          margin: 0 auto;
+        }
+
+        .features-section-label {
+          font-family: monospace;
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          color: #9c9a92;
+          font-weight: 600;
+          margin-bottom: 32px;
+          display: block;
+        }
+
         .features-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 32px;
-          max-width: 1100px;
-          margin: 0 auto 100px;
-          padding: 0 24px;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 0;
+          border: 1px solid #e5e3db;
+          border-radius: 16px;
+          overflow: hidden;
+          background-color: #ffffff;
         }
 
         .feature-card {
-          border-top: 1px solid #e5e3db;
-          padding-top: 24px;
-          text-align: left;
+          padding: 32px;
+          border-right: 1px solid #e5e3db;
+          border-bottom: 1px solid #e5e3db;
+          transition: background-color 0.2s;
         }
 
-        .feature-card-num {
+        .feature-card:nth-child(2n) {
+          border-right: none;
+        }
+
+        .feature-card:nth-child(3),
+        .feature-card:nth-child(4) {
+          border-bottom: none;
+        }
+
+        .feature-card:hover {
+          background-color: #fafaf8;
+        }
+
+        .feature-num {
           font-family: monospace;
           font-size: 11px;
-          color: #6e6c64;
+          color: #c4c2ba;
           font-weight: 600;
           display: block;
-          margin-bottom: 12px;
+          margin-bottom: 16px;
         }
 
-        .feature-card-title {
-          font-size: 18px;
+        .feature-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background-color: #f4f3ec;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          margin-bottom: 16px;
+        }
+
+        .feature-title {
+          font-size: 16px;
           font-weight: 700;
-          margin-bottom: 12px;
+          margin-bottom: 10px;
+          letter-spacing: -0.3px;
         }
 
-        .feature-card-desc {
-          font-size: 13.5px;
+        .feature-desc {
+          font-size: 13px;
           color: #6e6c64;
-          line-height: 1.6;
+          line-height: 1.65;
         }
 
-        /* Setup Flow Section */
+        /* ─── Stats bar ─── */
+        .stats-bar {
+          background-color: #1c1b18;
+          padding: 40px 80px;
+          display: flex;
+          justify-content: center;
+          gap: 80px;
+          flex-wrap: wrap;
+        }
+
+        .stat-item {
+          text-align: center;
+          color: #ffffff;
+        }
+
+        .stat-num {
+          font-size: 36px;
+          font-weight: 800;
+          letter-spacing: -1.5px;
+          display: block;
+        }
+
+        .stat-label {
+          font-size: 12px;
+          color: rgba(255,255,255,0.5);
+          margin-top: 4px;
+          font-family: monospace;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+
+        /* ─── Setup section ─── */
         .setup-section {
           background-color: #eae8e0;
           padding: 100px 24px;
@@ -313,10 +476,6 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           grid-template-columns: 1.1fr 1fr;
           gap: 60px;
           align-items: center;
-        }
-
-        .setup-content {
-          text-align: left;
         }
 
         .setup-step {
@@ -337,6 +496,7 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           font-size: 11px;
           font-weight: 700;
           flex-shrink: 0;
+          margin-top: 2px;
         }
 
         .step-title {
@@ -348,15 +508,14 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         .step-desc {
           font-size: 13px;
           color: #6e6c64;
-          line-height: 1.5;
+          line-height: 1.55;
         }
 
-        /* Browser Mockup */
         .browser-mockup {
           background-color: #ffffff;
           border: 1px solid #e5e3db;
           border-radius: 12px;
-          box-shadow: 0 20px 40px -15px rgba(110, 108, 100, 0.12);
+          box-shadow: 0 20px 40px -15px rgba(110, 108, 100, 0.14);
           overflow: hidden;
         }
 
@@ -393,12 +552,6 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           display: flex;
           flex-direction: column;
           gap: 8px;
-        }
-
-        .mock-sidebar-line {
-          height: 8px;
-          background-color: #eae8e0;
-          border-radius: 4px;
         }
 
         .mock-main {
@@ -447,70 +600,306 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
           border-radius: 2px 2px 0 0;
         }
 
-        /* Pricing/CTA Section */
+        /* ─── Three-way pricing ─── */
         .pricing-section {
           padding: 100px 24px;
-          max-width: 700px;
+          max-width: 1100px;
           margin: 0 auto;
           text-align: center;
         }
 
-        .pricing-card {
+        .pricing-three-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20px;
+          margin-top: 48px;
+          text-align: left;
+        }
+
+        .plan-card {
           background-color: #ffffff;
           border: 1px solid #e5e3db;
           border-radius: 16px;
-          padding: 48px;
-          margin-top: 40px;
-          box-shadow: 0 10px 30px -10px rgba(110, 108, 100, 0.08);
+          padding: 32px;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          gap: 20px;
+          transition: box-shadow 0.2s ease, transform 0.2s ease;
+          position: relative;
         }
 
-        .pricing-title {
+        .plan-card:hover {
+          box-shadow: 0 8px 28px -4px rgba(110, 108, 100, 0.12);
+          transform: translateY(-2px);
+        }
+
+        .plan-card.featured {
+          border-color: #1c1b18;
+          box-shadow: 0 6px 24px -4px rgba(28, 27, 24, 0.14);
+        }
+
+        .plan-badge {
+          display: inline-block;
+          font-family: monospace;
+          font-size: 9.5px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: #6e6c64;
+          background-color: #eae8e0;
+          padding: 4px 10px;
+          border-radius: 9999px;
+          font-weight: 600;
+          margin-bottom: 20px;
+          align-self: flex-start;
+        }
+
+        .plan-card.featured .plan-badge {
+          background-color: #1c1b18;
+          color: #ffffff;
+        }
+
+        .plan-name {
           font-size: 20px;
           font-weight: 700;
+          letter-spacing: -0.5px;
+          margin-bottom: 6px;
+          color: #1c1b18;
         }
 
-        .pricing-price {
-          font-size: 40px;
+        .plan-price {
+          font-size: 38px;
           font-weight: 800;
-          letter-spacing: -1px;
+          letter-spacing: -2px;
+          color: #1c1b18;
+          line-height: 1;
+          margin-bottom: 4px;
         }
 
-        .pricing-desc {
-          font-size: 13.5px;
+        .plan-price-note {
+          font-size: 13px;
+          color: #9c9a92;
+          font-weight: 400;
+          letter-spacing: 0;
+        }
+
+        .plan-desc {
+          font-size: 13px;
           color: #6e6c64;
-          max-width: 420px;
-          line-height: 1.5;
+          line-height: 1.65;
+          margin: 16px 0 0;
+          flex: 1;
         }
 
-        /* Footer */
-        .landing-footer {
-          padding: 40px 24px;
+        .plan-divider {
+          height: 1px;
+          background-color: #e5e3db;
+          margin: 24px 0;
+        }
+
+        .plan-features {
+          list-style: none;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+          margin-bottom: 28px;
+        }
+
+        .plan-features li {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          font-size: 12.5px;
+          color: #1c1b18;
+          line-height: 1.4;
+        }
+
+        .fi-yes  { color: #22c55e; font-size: 13px; flex-shrink: 0; }
+        .fi-warn { color: #f59e0b; font-size: 13px; flex-shrink: 0; }
+        .fi-note { color: #9c9a92; font-size: 13px; flex-shrink: 0; }
+
+        .plan-cta {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 12px 20px;
+          border-radius: 9999px;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          border: 1.5px solid #1c1b18;
+          background-color: transparent;
+          color: #1c1b18;
+          text-decoration: none;
+          font-family: inherit;
+          width: 100%;
+        }
+
+        .plan-cta:hover:not(:disabled) {
+          background-color: #1c1b18;
+          color: #ffffff;
+        }
+
+        .plan-cta.plan-primary {
+          background-color: #1c1b18;
+          color: #ffffff;
+        }
+
+        .plan-cta.plan-primary:hover:not(:disabled) {
+          background-color: #31302b;
+        }
+
+        .plan-cta:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* ─── Footer ─── */
+        .footer-wrap {
+          background-color: #ffffff;
           border-top: 1px solid #e5e3db;
+        }
+
+        .footer-inner {
+          max-width: 1100px;
+          margin: 0 auto;
+          padding: 56px 80px 0;
+        }
+
+        .footer-grid {
+          display: grid;
+          grid-template-columns: 1.6fr 1fr 1fr;
+          gap: 60px;
+          padding-bottom: 48px;
+          border-bottom: 1px solid #e5e3db;
+        }
+
+        .footer-brand {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .footer-logo {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          font-weight: 700;
+          font-size: 16px;
+          letter-spacing: -0.4px;
+          color: #1c1b18;
+          text-decoration: none;
+        }
+
+        .footer-desc {
+          font-size: 13px;
+          color: #6e6c64;
+          line-height: 1.65;
+          max-width: 290px;
+        }
+
+        .footer-byline {
           font-size: 12px;
           color: #9c9a92;
-          text-align: center;
         }
 
+        .footer-byline a {
+          color: #6e6c64;
+          text-decoration: none;
+        }
+
+        .footer-byline a:hover {
+          color: #1c1b18;
+        }
+
+        .footer-col-label {
+          font-family: monospace;
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: #9c9a92;
+          font-weight: 600;
+          margin-bottom: 16px;
+          display: block;
+        }
+
+        .footer-link-list {
+          list-style: none;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 11px;
+        }
+
+        .footer-link-item {
+          font-size: 13px;
+          color: #6e6c64;
+          text-decoration: none;
+          transition: color 0.15s;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .footer-link-item:hover {
+          color: #1c1b18;
+        }
+
+        .footer-bar {
+          padding: 20px 0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .footer-bar-text {
+          font-size: 11px;
+          color: #9c9a92;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .footer-sep { color: #d1cfc7; }
+
+        .footer-status {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          color: #9c9a92;
+        }
+
+        .footer-green-dot {
+          width: 6px;
+          height: 6px;
+          background-color: #22c55e;
+          border-radius: 50%;
+        }
+
+        /* ─── Animations ─── */
         @keyframes spin-clockwise {
           to { transform: rotate(360deg); }
         }
 
-        /* Responsive Breakpoints */
+        /* ─── Responsive ─── */
         @media (max-width: 900px) {
           .landing-header {
-            padding: 20px 24px;
+            padding: 16px 24px;
           }
-          
+
           .landing-nav {
             display: none;
           }
 
           .hero-title {
             font-size: 40px;
+            letter-spacing: -1.8px;
           }
 
           .diagram-grid {
@@ -528,127 +917,243 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
 
           .features-grid {
             grid-template-columns: 1fr;
-            gap: 40px;
+          }
+
+          .feature-card {
+            border-right: none !important;
+            border-bottom: 1px solid #e5e3db !important;
+          }
+
+          .feature-card:last-child {
+            border-bottom: none !important;
           }
 
           .setup-container {
             grid-template-columns: 1fr;
             gap: 40px;
           }
+
+          .stats-bar {
+            padding: 40px 24px;
+            gap: 40px;
+          }
+
+          .pricing-three-grid {
+            grid-template-columns: 1fr;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+          }
+
+          .plan-card.featured {
+            order: -1;
+          }
+
+          .footer-inner {
+            padding: 48px 24px 0;
+          }
+
+          .footer-grid {
+            grid-template-columns: 1fr;
+            gap: 36px;
+            padding-bottom: 36px;
+          }
+
+          .footer-bar {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .hero-title {
+            font-size: 32px;
+            letter-spacing: -1.5px;
+          }
+
+          .hero-section {
+            padding: 60px 16px 40px;
+          }
+
+          .plan-card {
+            padding: 24px;
+          }
+
+          .plan-price {
+            font-size: 30px;
+          }
+
+          .diagram-container {
+            padding: 28px 20px;
+          }
         }
       `}</style>
 
-      {/* Header */}
+      {/* ─── Header ─── */}
       <header className="landing-header">
         <a href="#" className="landing-logo">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="currentColor" />
-          </svg>
-          <span>Personal Hub</span>
+          <BentoLogo size={22} color="#1c1b18" />
+          <span>Phub Dashboard</span>
         </a>
         <nav className="landing-nav">
           <a href="#features" className="landing-nav-link">Features</a>
           <a href="#how-it-works" className="landing-nav-link">How It Works</a>
-          <a href="#setup" className="landing-nav-link">Setup</a>
           <a href="#pricing" className="landing-nav-link">Pricing</a>
+          <a href="https://github.com/fal3n-4ngel/personal-dashboard" target="_blank" rel="noopener noreferrer" className="landing-nav-link">GitHub ↗</a>
         </nav>
         <button className="login-btn" onClick={onLogin} disabled={!firebaseAuthReady}>
-          <span>Log in</span>
-          <span className="login-arrow">↗</span>
+          <span>Get started</span>
+          <span style={{ fontSize: "14px" }}>→</span>
         </button>
       </header>
 
-      {/* Hero Section */}
+      {/* ─── Hero ─── */}
       <section className="hero-section">
-        <span className="hero-badge">All-in-One Personal Hub</span>
+        <span className="hero-badge">
+          <BentoLogo size={12} color="#6e6c64" />
+          Self-hostable · Open source · Private
+        </span>
         <h1 className="hero-title">
-          Everything you track.<br />
-          <span className="serif-italic">Unified in one space.</span>
+          One dashboard.<br />
+          <span className="serif-italic">Everything you track.</span>
         </h1>
         <p className="hero-subtitle">
-          Consolidate your media watchlists, track daily expenses, set custom salary cycles, and view bento analytics—stored completely privately in your personal Google Cloud database.
+          Consolidate your media watchlists, track daily expenses with custom salary cycles, maintain a book library, and keep a scratchpad — all stored privately in your own database.
         </p>
+        <div className="hero-cta-row">
+          <button className="hero-cta-primary" onClick={onLogin} disabled={!firebaseAuthReady}>
+            Start for free
+            <span>→</span>
+          </button>
+          <a href="https://github.com/fal3n-4ngel/personal-dashboard" target="_blank" rel="noopener noreferrer" className="hero-cta-secondary">
+            View on GitHub
+          </a>
+        </div>
+        <div className="hero-pills">
+          <span className="hero-pill">💸 Expense Ledger</span>
+          <span className="hero-pill">🎬 Media Watchlist</span>
+          <span className="hero-pill">📚 Book Library</span>
+          <span className="hero-pill">✏️ Quick Notes</span>
+          <span className="hero-pill">🌸 AniList sync</span>
+          <span className="hero-pill">🎯 Trakt sync</span>
+          <span className="hero-pill">🎞️ Letterboxd import</span>
+          <span className="hero-pill">🤖 Custom ChatGPT GPT</span>
+        </div>
       </section>
 
-      {/* Diagram Block */}
+      {/* ─── How it works ─── */}
       <section id="how-it-works" className="hero-section" style={{ paddingTop: 0 }}>
         <div className="diagram-container">
-          <svg className="connections-svg" viewBox="0 0 1000 350" preserveAspectRatio="none">
-            {/* Left to Center paths */}
-            <path d="M 220 75 Q 360 75, 450 175" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 220 175 L 450 175" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 220 275 Q 360 275, 450 175" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            
-            {/* Center to Right paths */}
-            <path d="M 550 175 Q 640 75, 780 75" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 550 175 L 780 175" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
-            <path d="M 550 175 Q 640 275, 780 275" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
+          {/* Animated connection lines */}
+          <svg className="connections-svg" viewBox="0 0 1000 480" preserveAspectRatio="none">
+            {/* Left incoming → hub */}
+            <path d="M 220 50  Q 375 50,  460 240" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
+            <path d="M 220 130 Q 360 130, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 220 210 Q 360 210, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 220 290 Q 360 290, 460 240" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 220 370 Q 375 370, 460 240" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
+            {/* Hub → right canvas */}
+            <path d="M 540 240 Q 625 50,  780 55"  stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
+            <path d="M 540 240 Q 625 130, 780 135" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 540 240 Q 625 210, 780 215" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 540 240 Q 625 290, 780 295" stroke="#c4c2ba" strokeWidth="1.5" strokeDasharray="4 6" fill="none" />
+            <path d="M 540 240 Q 625 370, 780 375" stroke="#d1cfc7" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
           </svg>
 
-          <div className="diagram-grid">
-            {/* Incoming Column */}
-            <div className="diagram-column">
-              <span className="label-mono" style={{ alignSelf: "flex-start", marginBottom: "-10px" }}>Incoming</span>
-              
+          <div className="diagram-grid" style={{ minHeight: "440px" }}>
+            {/* ── LEFT: Data sources ── */}
+            <div className="diagram-column" style={{ gap: "10px" }}>
+              <span className="feature-num" style={{ alignSelf: "flex-start", marginBottom: "-4px" }}>INCOMING</span>
+
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#eae8e0", color: "#1c1b18" }}>🎬</div>
+                <div className="node-icon" style={{ backgroundColor: "#ede9fe", fontSize: "15px" }}>🎯</div>
                 <div className="node-text">
-                  <div className="node-title">Trakt watched API</div>
-                  <div className="node-desc">Movies & Series</div>
+                  <div className="node-title">Trakt API</div>
+                  <div className="node-desc">Shows & movies — OAuth sync</div>
                 </div>
               </div>
 
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#eae8e0", color: "#1c1b18" }}>🌸</div>
+                <div className="node-icon" style={{ backgroundColor: "#dbeafe", fontSize: "15px" }}>🌸</div>
                 <div className="node-text">
                   <div className="node-title">AniList OAuth</div>
-                  <div className="node-desc">Anime tracker</div>
+                  <div className="node-desc">Anime progress sync</div>
                 </div>
               </div>
 
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#eae8e0", color: "#1c1b18" }}>💵</div>
+                <div className="node-icon" style={{ backgroundColor: "#dcfce7", fontSize: "15px" }}>🎞️</div>
                 <div className="node-text">
-                  <div className="node-title">Expenses Form</div>
-                  <div className="node-desc">Manual ledger</div>
+                  <div className="node-title">Letterboxd CSV</div>
+                  <div className="node-desc">Watch history file import</div>
+                </div>
+              </div>
+
+              <div className="diagram-node" style={{ border: "1.5px solid #10b981", boxShadow: "0 4px 12px rgba(16,185,129,0.1)" }}>
+                <div className="node-icon" style={{ backgroundColor: "#10b981", color: "#fff", fontSize: "15px" }}>💬</div>
+                <div className="node-text">
+                  <div className="node-title">ChatGPT Mobile</div>
+                  <div className="node-desc">Custom GPT integration</div>
+                </div>
+              </div>
+
+              <div className="diagram-node">
+                <div className="node-icon" style={{ backgroundColor: "#fef9c3", fontSize: "15px" }}>✏️</div>
+                <div className="node-text">
+                  <div className="node-title">Manual Entry</div>
+                  <div className="node-desc">Expenses, books, notes</div>
                 </div>
               </div>
             </div>
 
-            {/* Center Hub Column */}
-            <div className="center-hub">
-              <div className="center-hub-ring"></div>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="#ffffff" />
-              </svg>
-              <span className="hub-title">Hub Engine</span>
+            {/* ── CENTER: Hub ── */}
+            <div className="center-hub" style={{ alignSelf: "center" }}>
+              <div className="center-hub-ring" />
+              <BentoLogo size={28} color="#ffffff" />
+              <span className="hub-label">Hub</span>
             </div>
 
-            {/* Results Column */}
-            <div className="diagram-column">
-              <span className="label-mono" style={{ alignSelf: "flex-start", marginBottom: "-10px" }}>Active Canvas</span>
+            {/* ── RIGHT: Your canvas ── */}
+            <div className="diagram-column" style={{ gap: "10px" }}>
+              <span className="feature-num" style={{ alignSelf: "flex-start", marginBottom: "-4px" }}>YOUR CANVAS</span>
 
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#d1b89a", color: "#ffffff" }}>✓</div>
+                <div className="node-icon" style={{ backgroundColor: "#d1b89a", fontSize: "15px" }}>🎬</div>
                 <div className="node-text">
                   <div className="node-title">Unified Watchlist</div>
-                  <div className="node-desc">Consolidated cards</div>
+                  <div className="node-desc">Anime · movies · shows</div>
                 </div>
               </div>
 
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#e39282", color: "#ffffff" }}>📊</div>
+                <div className="node-icon" style={{ backgroundColor: "#fde8e4", fontSize: "15px" }}>📊</div>
                 <div className="node-text">
                   <div className="node-title">Bento Analytics</div>
-                  <div className="node-desc">Expenses categories</div>
+                  <div className="node-desc">Spending breakdowns</div>
                 </div>
               </div>
 
               <div className="diagram-node">
-                <div className="node-icon" style={{ backgroundColor: "#b3666b", color: "#ffffff" }}>📈</div>
+                <div className="node-icon" style={{ backgroundColor: "#fee2e2", fontSize: "15px" }}>📈</div>
                 <div className="node-text">
-                  <div className="node-title">Daily Trends</div>
-                  <div className="node-desc">Salary cycle charts</div>
+                  <div className="node-title">Salary Cycle View</div>
+                  <div className="node-desc">Custom pay-period trends</div>
+                </div>
+              </div>
+
+              <div className="diagram-node" style={{ border: "1.5px solid #10b981" }}>
+                <div className="node-icon" style={{ backgroundColor: "#10b981", color: "#fff", fontSize: "15px" }}>💡</div>
+                <div className="node-text">
+                  <div className="node-title">Intelligent AI</div>
+                  <div className="node-desc">Recommendations & tips</div>
+                </div>
+              </div>
+
+              <div className="diagram-node">
+                <div className="node-icon" style={{ backgroundColor: "#f0fdf4", fontSize: "15px" }}>📚</div>
+                <div className="node-text">
+                  <div className="node-title">Book Library & Notes</div>
+                  <div className="node-desc">Reading list + scratchpad</div>
                 </div>
               </div>
             </div>
@@ -656,104 +1161,134 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         </div>
       </section>
 
-      {/* Feature Grid Section */}
-      <section id="features" className="features-grid">
-        <div className="feature-card">
-          <span className="feature-card-num">01</span>
-          <h3 className="feature-card-title">Clean Aggregated Sync</h3>
-          <p className="feature-card-desc">
-            Connect your external trackers seamlessly. Our Trakt engine syncs watched history and consolidates separate episodes into structured show records with covers via TVmaze, avoiding database bloat.
-          </p>
-        </div>
-        <div className="feature-card">
-          <span className="feature-card-num">02</span>
-          <h3 className="feature-card-title">Bento Ledger Analytics</h3>
-          <p className="feature-card-desc">
-            Log your daily expenses, tag categories, and instantly analyze spending distributions. Dynamic, custom styling ensures high scannability and visual appeal for your ledger entries.
-          </p>
-        </div>
-        <div className="feature-card">
-          <span className="feature-card-num">03</span>
-          <h3 className="feature-card-title">Custom Salary Cycle</h3>
-          <p className="feature-card-desc">
-            Ditch strict calendar timeframes. Set your monthly payday as your start index and filter analytics across custom cycles that accurately align with your personal cash flow.
-          </p>
+      {/* ─── Features ─── */}
+      <section id="features" className="features-section">
+        <span className="features-section-label">What's inside</span>
+        <div className="features-grid">
+          <div className="feature-card">
+            <span className="feature-num">01</span>
+            <div className="feature-icon">💸</div>
+            <h3 className="feature-title">Expense Ledger</h3>
+            <p className="feature-desc">
+              Log daily transactions, tag categories, and instantly see spending breakdowns. Set a custom salary start day and filter analytics to your actual pay period — not just calendar months.
+            </p>
+          </div>
+          <div className="feature-card">
+            <span className="feature-num">02</span>
+            <div className="feature-icon">🎬</div>
+            <h3 className="feature-title">Unified Watchlist</h3>
+            <p className="feature-desc">
+              Sync your AniList anime library and Trakt movie/show history in one tap. Track episode progress, update status, and push changes back to the source — bidirectional sync, no duplicates.
+            </p>
+          </div>
+          <div className="feature-card">
+            <span className="feature-num">03</span>
+            <div className="feature-icon">📚</div>
+            <h3 className="feature-title">Book Library & Notes</h3>
+            <p className="feature-desc">
+              Search OpenLibrary/Google Books to add items, track reading progress, and maintain a Markdown scratchpad. Everything auto-saves to your private Firestore.
+            </p>
+          </div>
+          <div className="feature-card" style={{ backgroundColor: "#f0fdf4" }}>
+            <span className="feature-num" style={{ color: "#10b981" }}>04</span>
+            <div className="feature-icon" style={{ backgroundColor: "#10b981", color: "#fff" }}>💬</div>
+            <h3 className="feature-title">ChatGPT Mobile Integration</h3>
+            <p className="feature-desc">
+              Sync a custom GPT directly with your dashboard API (OpenAPI spec included). Log expenses, update watchlist items, request detailed spending analytics, and get personalized movie or book recommendations on the go for free.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* Setup Flow Section */}
+      {/* ─── Stats bar ─── */}
+      <div className="stats-bar">
+        <div className="stat-item">
+          <span className="stat-num">4</span>
+          <span className="stat-label">Core modules</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-num">3</span>
+          <span className="stat-label">API integrations</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-num">₹0</span>
+          <span className="stat-label">Self-host cost</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-num">MIT</span>
+          <span className="stat-label">License</span>
+        </div>
+      </div>
+
+      {/* ─── Setup section ─── */}
       <section id="setup" className="setup-section">
         <div className="setup-container">
-          <div className="setup-content">
-            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec" }}>Minimalist Setup</span>
-            <h2 className="hero-title" style={{ fontSize: "38px", marginBottom: "40px" }}>
-              If you can log in,<br />
-              <span className="serif-italic">you can track.</span>
+          <div>
+            <span className="hero-badge" style={{ backgroundColor: "#f4f3ec", marginBottom: "28px" }}>Minimal Setup</span>
+            <h2 className="hero-title" style={{ fontSize: "40px", textAlign: "left", marginBottom: "40px" }}>
+              If you can clone a repo,<br />
+              <span className="serif-italic">you can self-host this.</span>
             </h2>
-
             <div className="setup-step">
               <span className="step-number">1</span>
               <div>
-                <h4 className="step-title">Secure Google Authentication</h4>
-                <p className="step-desc">Log in in seconds. Your database structure initializes automatically upon your first auth transaction.</p>
+                <h4 className="step-title">Fork & deploy to Vercel</h4>
+                <p className="step-desc">Click the deploy button in the GitHub README. Vercel sets up CI/CD automatically in under 2 minutes.</p>
               </div>
             </div>
-
             <div className="setup-step">
               <span className="step-number">2</span>
               <div>
-                <h4 className="step-title">Connect API Credentials</h4>
-                <p className="step-desc">Save your personal AniList and Trakt Client OAuth credentials right inside the settings card to fetch libraries securely.</p>
+                <h4 className="step-title">Create a Firebase project</h4>
+                <p className="step-desc">Add your Firebase config as Vercel env vars. Firestore and Auth initialize on first login — no manual schema setup.</p>
               </div>
             </div>
-
             <div className="setup-step">
               <span className="step-number">3</span>
               <div>
-                <h4 className="step-title">Full Dashboard Access</h4>
-                <p className="step-desc">Categorize, toggle anime vs general media watchlist filters, and review daily trend graphs in one fluid bento board.</p>
+                <h4 className="step-title">Connect your API keys</h4>
+                <p className="step-desc">Optionally add AniList, Trakt, and TMDb keys to unlock full sync. Everything else works without them.</p>
               </div>
             </div>
           </div>
 
-          {/* Browser Mockup */}
           <div className="browser-mockup">
             <div className="browser-header">
-              <div className="browser-dot" style={{ backgroundColor: "#ff5f56" }}></div>
-              <div className="browser-dot" style={{ backgroundColor: "#ffbd2e" }}></div>
-              <div className="browser-dot" style={{ backgroundColor: "#27c93f" }}></div>
+              <div className="browser-dot" style={{ backgroundColor: "#ff5f56" }} />
+              <div className="browser-dot" style={{ backgroundColor: "#ffbd2e" }} />
+              <div className="browser-dot" style={{ backgroundColor: "#27c93f" }} />
             </div>
             <div className="browser-body">
               <div className="mock-sidebar">
-                <div className="mock-sidebar-line" style={{ width: "100%", height: "14px", backgroundColor: "#1c1b18" }}></div>
-                <div className="mock-sidebar-line" style={{ width: "80%", marginTop: "10px" }}></div>
-                <div className="mock-sidebar-line" style={{ width: "65%" }}></div>
-                <div className="mock-sidebar-line" style={{ width: "70%" }}></div>
+                <div style={{ height: "14px", backgroundColor: "#1c1b18", borderRadius: "4px" }} />
+                <div style={{ height: "8px", width: "80%", backgroundColor: "#eae8e0", borderRadius: "4px", marginTop: "10px" }} />
+                <div style={{ height: "8px", width: "65%", backgroundColor: "#eae8e0", borderRadius: "4px" }} />
+                <div style={{ height: "8px", width: "70%", backgroundColor: "#eae8e0", borderRadius: "4px" }} />
               </div>
               <div className="mock-main">
                 <div className="mock-grid">
                   <div className="mock-card">
-                    <div style={{ height: "6px", width: "40px", backgroundColor: "#eae8e0", marginBottom: "6px" }}></div>
-                    <div style={{ height: "14px", width: "70px", backgroundColor: "#1c1b18" }}></div>
+                    <div style={{ height: "6px", width: "40px", backgroundColor: "#eae8e0", marginBottom: "6px", borderRadius: "3px" }} />
+                    <div style={{ height: "14px", width: "70px", backgroundColor: "#1c1b18", borderRadius: "3px" }} />
                   </div>
                   <div className="mock-card">
-                    <div style={{ height: "6px", width: "30px", backgroundColor: "#eae8e0", marginBottom: "6px" }}></div>
-                    <div style={{ height: "14px", width: "50px", backgroundColor: "#b3666b" }}></div>
+                    <div style={{ height: "6px", width: "30px", backgroundColor: "#eae8e0", marginBottom: "6px", borderRadius: "3px" }} />
+                    <div style={{ height: "14px", width: "50px", backgroundColor: "#b3666b", borderRadius: "3px" }} />
                   </div>
                   <div className="mock-card">
-                    <div style={{ height: "6px", width: "40px", backgroundColor: "#eae8e0", marginBottom: "6px" }}></div>
-                    <div style={{ height: "14px", width: "60px", backgroundColor: "#e39282" }}></div>
+                    <div style={{ height: "6px", width: "40px", backgroundColor: "#eae8e0", marginBottom: "6px", borderRadius: "3px" }} />
+                    <div style={{ height: "14px", width: "60px", backgroundColor: "#e39282", borderRadius: "3px" }} />
                   </div>
                 </div>
                 <div className="mock-chart">
-                  <div style={{ height: "8px", width: "80px", backgroundColor: "#eae8e0", alignSelf: "flex-start", marginBottom: "8px" }}></div>
+                  <div style={{ height: "8px", width: "80px", backgroundColor: "#eae8e0", alignSelf: "flex-start", marginBottom: "8px", borderRadius: "3px" }} />
                   <div className="mock-bar-container">
-                    <div className="mock-bar" style={{ height: "40px" }}></div>
-                    <div className="mock-bar" style={{ height: "70px", backgroundColor: "#1c1b18" }}></div>
-                    <div className="mock-bar" style={{ height: "55px", backgroundColor: "#d1b89a" }}></div>
-                    <div className="mock-bar" style={{ height: "20px" }}></div>
-                    <div className="mock-bar" style={{ height: "85px", backgroundColor: "#1c1b18" }}></div>
-                    <div className="mock-bar" style={{ height: "60px" }}></div>
+                    <div className="mock-bar" style={{ height: "40px" }} />
+                    <div className="mock-bar" style={{ height: "70px", backgroundColor: "#1c1b18" }} />
+                    <div className="mock-bar" style={{ height: "55px", backgroundColor: "#d1b89a" }} />
+                    <div className="mock-bar" style={{ height: "20px" }} />
+                    <div className="mock-bar" style={{ height: "85px", backgroundColor: "#1c1b18" }} />
+                    <div className="mock-bar" style={{ height: "60px" }} />
                   </div>
                 </div>
               </div>
@@ -762,37 +1297,157 @@ export default function LandingPage({ onLogin, authError, firebaseAuthReady }: L
         </div>
       </section>
 
-      {/* Pricing / CTA Section */}
+      {/* ─── Three-way pricing ─── */}
       <section id="pricing" className="pricing-section">
-        <span className="hero-badge">Completely Free</span>
-        <h2 className="hero-title" style={{ fontSize: "38px" }}>
-          Three ways to track.<br />
-          <span className="serif-italic">One is the ultimate.</span>
+        <span className="hero-badge">Three ways in</span>
+        <h2 className="hero-title" style={{ fontSize: "44px", marginBottom: "12px" }}>
+          Pick your setup.<br />
+          <span className="serif-italic">All are welcome.</span>
         </h2>
-        
-        <div className="pricing-card">
-          <span className="pricing-title">Self-Hosted Instance</span>
-          <span className="pricing-price">₹0</span>
-          <p className="pricing-desc">
-            Free forever. We do not store or process your data on any central servers. Everything resides in your private Firebase storage.
-          </p>
-          
-          {authError && (
-            <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", width: "100%", maxWidth: "340px", fontSize: "12px", color: "#dc2626", margin: "10px 0" }}>
-              {authError}
-            </div>
-          )}
+        <p className="hero-subtitle" style={{ marginBottom: 0 }}>
+          No feature gates. No paywalls on your own data. Use the hosted version, self-deploy for full privacy, or fork and make it yours.
+        </p>
 
-          <button className="login-btn" style={{ padding: "14px 32px", fontSize: "14px" }} onClick={onLogin} disabled={!firebaseAuthReady}>
-            <span>Sign in with Google</span>
-            <span className="login-arrow" style={{ width: "18px", height: "18px", fontSize: "11px" }}>↗</span>
-          </button>
+        <div className="pricing-three-grid">
+          {/* ── Card 1: Cloud hosted ── */}
+          <div className="plan-card">
+            <span className="plan-badge">Free · Now</span>
+            <p className="plan-name">Cloud Hosted</p>
+            <p className="plan-price">₹0 <span className="plan-price-note">/ now</span></p>
+            <p className="plan-desc">
+              Sign in instantly and use my shared Vercel + Firebase instance. No setup, no downloads. Free right now — if traffic grows I may add ads or a small fee to cover hosting.
+            </p>
+            <div className="plan-divider" />
+            <ul className="plan-features">
+              <li><span className="fi-yes">✓</span> Instant access, zero setup</li>
+              <li><span className="fi-yes">✓</span> Google sign-in</li>
+              <li><span className="fi-yes">✓</span> Always updated</li>
+              <li><span className="fi-warn">○</span> Shared hosting instance</li>
+              <li><span className="fi-warn">○</span> May add ads / fee later</li>
+            </ul>
+            {authError && (
+              <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#dc2626", marginBottom: "12px" }}>
+                {authError}
+              </div>
+            )}
+            <button className="plan-cta" onClick={onLogin} disabled={!firebaseAuthReady}>
+              Sign in with Google →
+            </button>
+          </div>
+
+          {/* ── Card 2: Self-hosted (featured) ── */}
+          <div className="plan-card featured">
+            <span className="plan-badge">Recommended · Free Forever</span>
+            <p className="plan-name">Self-Hosted</p>
+            <p className="plan-price">₹0 <span className="plan-price-note">forever</span></p>
+            <p className="plan-desc">
+              Deploy your own instance on Vercel + Firebase in ~5 minutes. Your expenses, watchlist, and notes stay entirely in your private database — never shared, never monetised.
+            </p>
+            <div className="plan-divider" />
+            <ul className="plan-features">
+              <li><span className="fi-yes">✓</span> Your data, your servers</li>
+              <li><span className="fi-yes">✓</span> Private Firebase database</li>
+              <li><span className="fi-yes">✓</span> Zero ads, forever</li>
+              <li><span className="fi-yes">✓</span> Free on Firebase Spark plan</li>
+              <li><span className="fi-yes">✓</span> Full env control</li>
+            </ul>
+            <a href="https://github.com/fal3n-4ngel/personal-dashboard#readme" target="_blank" rel="noopener noreferrer" className="plan-cta plan-primary">
+              View Setup Guide →
+            </a>
+          </div>
+
+          {/* ── Card 3: Fork & build ── */}
+          <div className="plan-card">
+            <span className="plan-badge">MIT License</span>
+            <p className="plan-name">Fork & Build</p>
+            <p className="plan-price" style={{ fontSize: "26px", letterSpacing: "-0.5px" }}>Open Source</p>
+            <p className="plan-desc">
+              Clone the full repo, gut it, add your own modules, redesign it. Built on Next.js + Firebase — a solid base for any personal dashboard or productivity app.
+            </p>
+            <div className="plan-divider" />
+            <ul className="plan-features">
+              <li><span className="fi-yes">✓</span> Full codebase access</li>
+              <li><span className="fi-yes">✓</span> MIT licensed</li>
+              <li><span className="fi-yes">✓</span> Next.js + Firebase stack</li>
+              <li><span className="fi-note">→</span> PRs & feedback welcome</li>
+              <li><span className="fi-note">→</span> ⭐ Star if it helped you</li>
+            </ul>
+            <a href="https://github.com/fal3n-4ngel/personal-dashboard" target="_blank" rel="noopener noreferrer" className="plan-cta">
+              View on GitHub →
+            </a>
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="landing-footer">
-        <p>© {new Date().getFullYear()} Personal Hub. Private client application. Built for self-hosting.</p>
+      {/* ─── Footer ─── */}
+      <footer className="footer-wrap">
+        <div className="footer-inner">
+          <div className="footer-grid">
+            <div className="footer-brand">
+              <a href="#" className="footer-logo">
+                <BentoLogo size={18} color="#1c1b18" />
+                Phub Dashboard
+              </a>
+              <p className="footer-desc">
+                A private tracking dashboard for media watchlists, daily expenses, book reading, and notes. Built for self-hosters and privacy-first users.
+              </p>
+              <p className="footer-byline">
+                Built by <a href="https://github.com/fal3n-4ngel" target="_blank" rel="noopener noreferrer">@fal3n-4ngel</a>
+              </p>
+            </div>
+
+            <div>
+              <span className="footer-col-label">Dashboard</span>
+              <ul className="footer-link-list">
+                <li><span className="footer-link-item" onClick={onLogin}>Expense Ledger</span></li>
+                <li><span className="footer-link-item" onClick={onLogin}>Media Watchlist</span></li>
+                <li><span className="footer-link-item" onClick={onLogin}>Book Library</span></li>
+                <li><span className="footer-link-item" onClick={onLogin}>Quick Notes</span></li>
+                <li><a href="/gpt" className="footer-link-item">ChatGPT Plugin</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <span className="footer-col-label">Resources</span>
+              <ul className="footer-link-list">
+                <li>
+                  <a href="https://github.com/fal3n-4ngel/personal-dashboard" target="_blank" rel="noopener noreferrer" className="footer-link-item">
+                    GitHub Repo ↗
+                  </a>
+                </li>
+                <li>
+                  <a href="https://github.com/fal3n-4ngel/personal-dashboard#readme" target="_blank" rel="noopener noreferrer" className="footer-link-item">
+                    Self-Host Guide ↗
+                  </a>
+                </li>
+                <li>
+                  <a href="/api/openapi.json" target="_blank" rel="noopener noreferrer" className="footer-link-item">
+                    OpenAPI Spec ↗
+                  </a>
+                </li>
+                <li>
+                  <a href="https://github.com/fal3n-4ngel/personal-dashboard/issues" target="_blank" rel="noopener noreferrer" className="footer-link-item">
+                    Report an Issue ↗
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="footer-bar">
+            <div className="footer-bar-text">
+              <span>© {new Date().getFullYear()} Personal Hub</span>
+              <span className="footer-sep">·</span>
+              <span>MIT License</span>
+              <span className="footer-sep">·</span>
+              <a href="https://github.com/fal3n-4ngel" target="_blank" rel="noopener noreferrer" style={{ color: "#9c9a92", textDecoration: "none" }}>@fal3n-4ngel</a>
+            </div>
+            <div className="footer-status">
+              <div className="footer-green-dot" />
+              <span>All systems operational</span>
+            </div>
+          </div>
+        </div>
       </footer>
     </div>
   );

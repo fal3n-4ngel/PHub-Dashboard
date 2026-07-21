@@ -829,17 +829,49 @@ export default function Dashboard() {
       } else {
         // mediaType is "movie" or "show" — search Trakt by type for accurate results
         const results = await traktRequest(user?.idToken, `/search/${mediaType}?query=${encodeURIComponent(mediaQuery)}&limit=8`);
-        setSearchResults((results || []).map((r: any) => {
+        const tmdbApiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
+        const formattedResults = await Promise.all((results || []).map(async (r: any) => {
           const media = r.movie || r.show;
-          return {
+          const item = {
             title: media.title,
             type: mediaType as "movie" | "show",
             totalEpisodes: null,
-            coverImage: null,
+            coverImage: null as string | null,
             year: media.year || null,
             traktId: media.ids?.trakt || null,
+            imdbId: media.ids?.imdb || null,
+            tvdbId: media.ids?.tvdb || null,
           };
+          
+          if (item.imdbId && tmdbApiKey) {
+            try {
+              const res = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`);
+              if (res.ok) {
+                const searchData = await res.json();
+                const movie = searchData.movie_results?.[0];
+                const show = searchData.tv_results?.[0];
+                const posterPath = movie?.poster_path || show?.poster_path;
+                if (posterPath) {
+                  item.coverImage = `https://image.tmdb.org/t/p/w185${posterPath}`;
+                }
+              }
+            } catch (err) {}
+          }
+          if (item.type === "show" && !item.coverImage) {
+            const queryParam = item.imdbId ? `imdb=${item.imdbId}` : item.tvdbId ? `thetvdb=${item.tvdbId}` : null;
+            if (queryParam) {
+              try {
+                const res = await fetch(`https://api.tvmaze.com/lookup/shows?${queryParam}`);
+                if (res.ok) {
+                  const showData = await res.json();
+                  if (showData.image?.medium) item.coverImage = showData.image.medium;
+                }
+              } catch (err) {}
+            }
+          }
+          return item;
         }));
+        setSearchResults(formattedResults);
       }
     } catch (err) { console.error(err); }
     finally { setIsSearchingMedia(false); }
@@ -1051,7 +1083,7 @@ export default function Dashboard() {
       if (mediaCategory === "anime") {
         return i.type === "anime";
       } else {
-        if (i.type === "anime") return false;
+        if (i.type === "anime" || i.type === "book") return false;
         return watchlistFilter === "all" || i.type === watchlistFilter;
       }
     })
@@ -1101,8 +1133,14 @@ export default function Dashboard() {
       {/* Mobile Header */}
       <header className="mobile-header">
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-          <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "-0.3px" }}>PHub Dashboard</span>
+          {/* Bento logo */}
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1.6" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" />
+            <rect x="11.2" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+            <rect x="1.6" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+            <rect x="11.2" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.85" />
+          </svg>
+          <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "-0.3px" }}>Phub Dashboard</span>
         </div>
         <div>
           {user && (
@@ -1141,8 +1179,14 @@ export default function Dashboard() {
       <aside className="sidebar">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "28px", paddingLeft: "8px" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>PHub Dashboard</span>
+            {/* Bento logo */}
+            <svg width="22" height="22" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1.6" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" />
+              <rect x="11.2" y="1.6" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+              <rect x="1.6" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.55" />
+              <rect x="11.2" y="11.2" width="7.2" height="7.2" rx="1.8" fill="var(--text-primary)" opacity="0.85" />
+            </svg>
+            <span style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "-0.5px" }}>Phub Dashboard</span>
           </div>
           <nav>
             <div onClick={() => setActiveTab("expenses")} className={`nav-link ${activeTab === "expenses" ? "active" : ""}`}>
@@ -1316,6 +1360,66 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {/* ─── Mobile expense controls (hidden on desktop via CSS) ─── */}
+        {activeTab === "expenses" && (
+          <div className="mobile-only" style={{ flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+            {/* Row 1: Tab switcher + time filter side by side */}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "3px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px", flexShrink: 0 }}>
+                <button
+                  onClick={() => setExpenseTab("ledger")}
+                  style={{
+                    fontSize: "11px", fontWeight: 600, padding: "5px 12px",
+                    backgroundColor: expenseTab === "ledger" ? "#fff" : "transparent",
+                    color: expenseTab === "ledger" ? "var(--text-primary)" : "var(--text-secondary)",
+                    borderRadius: "6px", border: "none", cursor: "pointer",
+                    boxShadow: expenseTab === "ledger" ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+                    transition: "all 0.2s", whiteSpace: "nowrap" as const
+                  }}
+                >Ledger</button>
+                <button
+                  onClick={() => setExpenseTab("subscriptions")}
+                  style={{
+                    fontSize: "11px", fontWeight: 600, padding: "5px 12px",
+                    backgroundColor: expenseTab === "subscriptions" ? "#fff" : "transparent",
+                    color: expenseTab === "subscriptions" ? "var(--text-primary)" : "var(--text-secondary)",
+                    borderRadius: "6px", border: "none", cursor: "pointer",
+                    boxShadow: expenseTab === "subscriptions" ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+                    transition: "all 0.2s", whiteSpace: "nowrap" as const
+                  }}
+                >Subscriptions</button>
+              </div>
+              {expenseTab === "ledger" && (
+                <select
+                  value={timeFilter}
+                  onChange={(e) => setTimeFilter(e.target.value)}
+                  style={{ padding: "5px 8px", fontSize: "12px", borderRadius: "6px", flex: 1, border: "1px solid var(--border-subtle)", backgroundColor: "#fff", minWidth: 0 }}
+                >
+                  <option value="all">All time</option>
+                  <option value="salary">Salary Cycle</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="7">Last 7 days</option>
+                </select>
+              )}
+            </div>
+            {/* Row 2: Salary day picker — only shown when salary cycle is selected */}
+            {expenseTab === "ledger" && timeFilter === "salary" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "6px 10px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" as const }}>📅 Salary start day</span>
+                <select
+                  value={salaryStartDay}
+                  onChange={(e) => updateSalaryStartDay(Number(e.target.value))}
+                  style={{ padding: "4px 8px", fontSize: "12px", borderRadius: "6px", border: "1px solid var(--border-subtle)", backgroundColor: "#fff", flex: 1 }}
+                >
+                  {[...Array(31)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>Day {i + 1}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ─── EXPENSES TAB ─── */}
         {activeTab === "expenses" && expenseTab === "ledger" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
@@ -1369,38 +1473,37 @@ export default function Dashboard() {
               </div>
 
               {activeChart === "category" ? (
-                <div className="chart-container" style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
+                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "12px" }}>
                   {Object.entries(catBreakdown).slice(0, 8).map(([cat, total], idx) => {
                     const maxAmt = Math.max(...Object.values(catBreakdown), 1);
                     const pct = (total / maxAmt) * 100;
                     const colors = ["#b3666b", "#e39282", "#1c1b18", "#6e6c64", "#d1b89a", "#eae8e0", "#9c9a92", "#c4c2ba"];
                     return (
-                      <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
-                        <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{(total/1000).toFixed(0)}k</span>
-                        <div className="chart-bar-container" style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
+                      <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: "52px", maxWidth: "68px", flexShrink: 0, flex: 1 }}>
+                        <span style={{ fontSize: "9.5px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{(total/1000).toFixed(0)}k</span>
+                        <div className="chart-bar-container" style={{ width: "20px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
                           <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
                         </div>
-                        <span style={{ fontSize: "9px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
+                        <span style={{ fontSize: "8px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
                       </div>
                     );
                   })}
                   {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transactions to plot.</p>}
                 </div>
               ) : (
-                <div className="chart-container" style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
-                  {dailyTrend.map(([date, total], idx) => {
+                <div className="chart-container" style={{ display: "flex", justifyContent: "flex-start", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px", overflowX: "auto", overflowY: "hidden", gap: "12px" }}>
+                  {dailyTrend.map(([date, total]) => {
                     const maxAmt = Math.max(...dailyTrend.map(d => d[1]), 1);
                     const pct = (total / maxAmt) * 100;
-                    // Format date to MM/DD
                     const dateParts = date.split("-");
                     const dateFormatted = dateParts.length === 3 ? `${dateParts[1]}/${dateParts[2]}` : date;
                     return (
-                      <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
-                        <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{total.toLocaleString("en-IN")}</span>
-                        <div className="chart-bar-container" style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
+                      <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: "52px", maxWidth: "68px", flexShrink: 0, flex: 1 }}>
+                        <span style={{ fontSize: "9.5px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{total.toLocaleString("en-IN")}</span>
+                        <div className="chart-bar-container" style={{ width: "20px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
                           <div style={{ width: "100%", height: `${pct}%`, backgroundColor: "#3b82f6", borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
                         </div>
-                        <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--text-muted)", textAlign: "center", width: "100%" }}>{dateFormatted}</span>
+                        <span style={{ fontSize: "8px", fontFamily: "monospace", color: "var(--text-muted)", textAlign: "center", width: "100%" }}>{dateFormatted}</span>
                       </div>
                     );
                   })}
@@ -1520,19 +1623,76 @@ export default function Dashboard() {
         {activeTab === "media" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
 
-            {/* Stats */}
+            {/* Stats — broken down by type */}
             <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
-              <div className="stat-card"><span className="label-mono">Watching Now</span><span className="stat-value">{watchingCount}</span><span className="stat-subtext">Active items</span></div>
-              <div className="stat-card"><span className="label-mono">Plan to Watch</span><span className="stat-value" style={{ color: "#b3666b" }}>{planCount}</span><span className="stat-subtext">Queued</span></div>
-              <div className="stat-card"><span className="label-mono">Completed</span><span className="stat-value" style={{ color: "#e39282" }}>{completedCount}</span><span className="stat-subtext">Finished</span></div>
+
+              {/* Watching Now */}
               <div className="stat-card">
-                <span className="label-mono">Library</span>
-                <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{animeCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Anime</p></div>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{showCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Shows</p></div>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{movieCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Movies</p></div>
+                <span className="label-mono">Watching Now</span>
+                <span className="stat-value">{watchingCount}</span>
+                <div style={{ display: "flex", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>ANIME</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "watching" && i.type === "anime").length}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#f3f4f6", color: "#374151", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>M+S</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "watching" && i.type !== "anime" && i.type !== "book").length}</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Plan to Watch */}
+              <div className="stat-card">
+                <span className="label-mono">Plan to Watch</span>
+                <span className="stat-value" style={{ color: "#b3666b" }}>{planCount}</span>
+                <div style={{ display: "flex", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>ANIME</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "plan_to_watch" && i.type === "anime").length}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#f3f4f6", color: "#374151", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>M+S</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "plan_to_watch" && i.type !== "anime" && i.type !== "book").length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Completed */}
+              <div className="stat-card">
+                <span className="label-mono">Completed</span>
+                <span className="stat-value" style={{ color: "#e39282" }}>{completedCount}</span>
+                <div style={{ display: "flex", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>ANIME</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "completed" && i.type === "anime").length}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "9px", backgroundColor: "#f3f4f6", color: "#374151", padding: "1px 6px", borderRadius: "9999px", fontWeight: 600, fontFamily: "monospace" }}>M+S</span>
+                    <span style={{ fontSize: "13px", fontWeight: 700 }}>{watchlist.filter(i => i.status === "completed" && i.type !== "anime" && i.type !== "book").length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Library breakdown */}
+              <div className="stat-card">
+                <span className="label-mono">Library</span>
+                <div style={{ display: "flex", gap: "12px", marginTop: "10px", flexWrap: "wrap" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "20px", fontWeight: 700 }}>{animeCount}</p>
+                    <p style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Anime</p>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "20px", fontWeight: 700 }}>{showCount}</p>
+                    <p style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Shows</p>
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "20px", fontWeight: 700 }}>{movieCount}</p>
+                    <p style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "monospace", textTransform: "uppercase" }}>Movies</p>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
             {/* AniList sync banner */}
@@ -1666,7 +1826,7 @@ export default function Dashboard() {
               {/* Watchlist */}
               <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+                  <div className="mobile-scroll-x" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
                     {/* Left: Category Switch Tabs */}
                     <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
                       <button
@@ -1751,18 +1911,25 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: "300px" }}>
-                  {isFetchingWatchlist
-                    ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Loading...</p>
-                    : filteredWatchlist.length === 0
-                    ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Nothing here yet.</p>
-                    : filteredWatchlist.map((item) => (
-                      <div key={item.id} style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
-                        {item.coverImage ? <img src={item.coverImage} alt={item.title} style={{ width: "38px", height: "54px", objectFit: "cover", borderRadius: "6px" }} /> : <div style={{ width: "38px", height: "54px", backgroundColor: "var(--bg-secondary)", borderRadius: "6px" }}></div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0", minHeight: "300px" }}>
+                  {isFetchingWatchlist ? (
+                    <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Loading...</p>
+                  ) : filteredWatchlist.length === 0 ? (
+                    <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Nothing here yet.</p>
+                  ) : (() => {
+                    /* Group items: anime vs movies/shows */
+                    const animeItems = filteredWatchlist.filter(i => i.type === "anime");
+                    const generalItems = filteredWatchlist.filter(i => i.type !== "anime");
+                    const showBothGroups = animeItems.length > 0 && generalItems.length > 0;
+
+                    const renderItem = (item: typeof filteredWatchlist[0]) => (
+                      <div key={item.id} style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", padding: "12px 0" }}>
+                        {item.coverImage
+                          ? <img src={item.coverImage} alt={item.title} style={{ width: "38px", height: "54px", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />
+                          : <div style={{ width: "38px", height: "54px", backgroundColor: "var(--bg-secondary)", borderRadius: "6px", flexShrink: 0 }}></div>}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                             <p style={{ fontSize: "14px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{item.title}</p>
-                            {/* Sync indicator */}
                             {item.anilistId && anilistUser && (
                               <span title="Synced with AniList" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#3b82f6", flexShrink: 0 }}></span>
                             )}
@@ -1795,7 +1962,37 @@ export default function Dashboard() {
                           <button onClick={() => deleteWatchItem(item.id)} style={{ backgroundColor: "transparent", color: "#ef4444", padding: "2px", fontSize: "11px" }}>✕</button>
                         </div>
                       </div>
-                    ))}
+                    );
+
+                    return (
+                      <>
+                        {/* Movies & Shows group */}
+                        {generalItems.length > 0 && (
+                          <div>
+                            {showBothGroups && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0 6px", borderBottom: "2px solid var(--border-subtle)" }}>
+                                <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-secondary)" }}>🎬 Movies & Shows</span>
+                                <span style={{ fontSize: "10px", color: "var(--text-muted)", backgroundColor: "var(--bg-secondary)", padding: "1px 7px", borderRadius: "9999px" }}>{generalItems.length}</span>
+                              </div>
+                            )}
+                            {generalItems.map(renderItem)}
+                          </div>
+                        )}
+                        {/* Anime group */}
+                        {animeItems.length > 0 && (
+                          <div style={{ marginTop: showBothGroups ? "6px" : "0" }}>
+                            {showBothGroups && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 0 6px", borderBottom: "2px solid var(--border-subtle)" }}>
+                                <span style={{ fontSize: "11px", fontWeight: 700, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-secondary)" }}>🌸 Anime</span>
+                                <span style={{ fontSize: "10px", color: "var(--text-muted)", backgroundColor: "var(--bg-secondary)", padding: "1px 7px", borderRadius: "9999px" }}>{animeItems.length}</span>
+                              </div>
+                            )}
+                            {animeItems.map(renderItem)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1879,6 +2076,30 @@ export default function Dashboard() {
         {activeTab === "books" && (
           <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <h1 style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "-0.5px" }}>Book Library</h1>
+
+            {/* Book stats */}
+            <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px" }}>
+              <div className="stat-card">
+                <span className="label-mono">Reading Now</span>
+                <span className="stat-value">{watchlist.filter(i => i.type === "book" && i.status === "watching").length}</span>
+                <span className="stat-subtext">In progress</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">To Read</span>
+                <span className="stat-value" style={{ color: "#b3666b" }}>{watchlist.filter(i => i.type === "book" && i.status === "plan_to_watch").length}</span>
+                <span className="stat-subtext">On the shelf</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">Finished</span>
+                <span className="stat-value" style={{ color: "#e39282" }}>{watchlist.filter(i => i.type === "book" && i.status === "completed").length}</span>
+                <span className="stat-subtext">Books read</span>
+              </div>
+              <div className="stat-card">
+                <span className="label-mono">Total in Library</span>
+                <span className="stat-value">{watchlist.filter(i => i.type === "book").length}</span>
+                <span className="stat-subtext">All books</span>
+              </div>
+            </div>
 
             <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "24px" }}>
               <div className="card" style={{ padding: "20px" }}>
@@ -1997,34 +2218,22 @@ export default function Dashboard() {
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="mobile-bottom-nav" style={{ overflowX: "auto", justifyContent: "flex-start", padding: "0 8px", gap: "16px" }}>
-        <div onClick={() => setActiveTab("expenses")} className={`mobile-nav-link ${activeTab === "expenses" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
+      <nav className="mobile-bottom-nav">
+        <div onClick={() => setActiveTab("expenses")} className={`mobile-nav-link ${activeTab === "expenses" ? "active" : ""}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-          <span style={{ marginTop: "2px" }}>Ledger</span>
+          <span>Ledger</span>
         </div>
-        <div onClick={() => setActiveTab("subscriptions")} className={`mobile-nav-link ${activeTab === "subscriptions" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="8" x2="22" y2="8"/><line x1="2" y1="16" x2="22" y2="16"/></svg>
-          <span style={{ marginTop: "2px" }}>Subs</span>
-        </div>
-        <div onClick={() => setActiveTab("habits")} className={`mobile-nav-link ${activeTab === "habits" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <span style={{ marginTop: "2px" }}>Habits</span>
-        </div>
-        <div onClick={() => setActiveTab("goals")} className={`mobile-nav-link ${activeTab === "goals" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-          <span style={{ marginTop: "2px" }}>Goals</span>
-        </div>
-        <div onClick={() => setActiveTab("media")} className={`mobile-nav-link ${activeTab === "media" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
+        <div onClick={() => setActiveTab("media")} className={`mobile-nav-link ${activeTab === "media" ? "active" : ""}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-          <span style={{ marginTop: "2px" }}>Watchlist</span>
+          <span>Watchlist</span>
         </div>
-        <div onClick={() => setActiveTab("books")} className={`mobile-nav-link ${activeTab === "books" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
+        <div onClick={() => setActiveTab("books")} className={`mobile-nav-link ${activeTab === "books" ? "active" : ""}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-          <span style={{ marginTop: "2px" }}>Library</span>
+          <span>Library</span>
         </div>
-        <div onClick={() => setActiveTab("notes")} className={`mobile-nav-link ${activeTab === "notes" ? "active" : ""}`} style={{ flexShrink: 0, padding: "10px 12px" }}>
+        <div onClick={() => setActiveTab("notes")} className={`mobile-nav-link ${activeTab === "notes" ? "active" : ""}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          <span style={{ marginTop: "2px" }}>Notes</span>
+          <span>Notes</span>
         </div>
       </nav>
     </div>

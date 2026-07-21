@@ -246,7 +246,7 @@ export async function GET() {
           properties: {
             id: { type: "string", description: "Unique item id — use for updates/deletes" },
             title: { type: "string" },
-            type: { type: "string", enum: ["movie", "show", "anime"] },
+            type: { type: "string", enum: ["movie", "show", "anime", "book"] },
             status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"] },
             progress: { type: "integer", description: "Episodes watched (0 for movies)" },
             totalEpisodes: { type: ["integer", "null"] },
@@ -261,7 +261,7 @@ export async function GET() {
           required: ["title", "type", "status"],
           properties: {
             title: { type: "string", maxLength: 300, examples: ["Frieren: Beyond Journey's End"] },
-            type: { type: "string", enum: ["movie", "show", "anime"] },
+            type: { type: "string", enum: ["movie", "show", "anime", "book"] },
             status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"], description: "Use plan_to_watch unless told otherwise" },
             progress: { type: "integer", minimum: 0, default: 0, description: "Episodes already watched" },
             totalEpisodes: { type: ["integer", "null"], minimum: 0 },
@@ -275,7 +275,7 @@ export async function GET() {
           description: "Any subset of watchlist fields to change.",
           properties: {
             title: { type: "string", maxLength: 300 },
-            type: { type: "string", enum: ["movie", "show", "anime"] },
+            type: { type: "string", enum: ["movie", "show", "anime", "book"] },
             status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"] },
             progress: { type: "integer", minimum: 0, description: "Episodes watched" },
             totalEpisodes: { type: ["integer", "null"], minimum: 0 },
