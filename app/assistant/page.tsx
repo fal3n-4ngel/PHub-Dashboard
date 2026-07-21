@@ -3,19 +3,19 @@
 import React, { useEffect, useState } from "react";
 import { SITE_URL } from "@/lib/site";
 
-/* ─── ChatGPT Custom GPT integration guide ───
- * Walks through connecting the dashboard API to a Custom GPT via Actions:
- * import the OpenAPI schema, then authenticate with a Firebase ID token.
+/* ─── AI Assistant Integration Guide ───
+ * Walks through connecting the dashboard API to a Custom Agent (ChatGPT Custom GPT, Gemini Gems, Claude Projects, etc.) via Actions:
+ * Import the OpenAPI schema, then authenticate with a Firebase ID token.
  * Requires sign-in so the user can copy a fresh token straight from here. */
 
-interface GptUser {
+interface AgentUser {
   displayName: string | null;
   email: string;
 }
 
-export default function GptIntegrationPage() {
+export default function AssistantIntegrationPage() {
   const [authApi, setAuthApi] = useState<any>(null);
-  const [user, setUser] = useState<GptUser | null>(null);
+  const [user, setUser] = useState<AgentUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
   const [origin, setOrigin] = useState("");
@@ -67,7 +67,7 @@ export default function GptIntegrationPage() {
   }
 
   // Always mint a fresh token (force refresh) so the full ~1h lifetime is
-  // available after pasting it into the GPT's auth settings.
+  // available after pasting it into the Agent's auth settings.
   async function copyToken() {
     if (!authApi?.auth?.currentUser) return;
     setTokenBusy(true);
@@ -90,7 +90,7 @@ export default function GptIntegrationPage() {
     }
   }
 
-  const gptInstructions = `You are my personal dashboard assistant. You manage two things through the API actions:
+  const agentInstructions = `You are my personal dashboard assistant. You manage two things through the API actions:
 
 1. Expenses — when I mention spending money ("spent 450 on lunch", "uber was 320"), log it with createExpense. Infer a sensible category (Food, Transport, Rent, Shopping, Entertainment, Health, Other) and reuse existing ones from listExpenseCategories when they fit. Amounts are INR. Use today's date unless I say otherwise. When I ask about my spending, use listExpenses with filters and summarise clearly.
 
@@ -139,9 +139,9 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
         </div>
 
         <div>
-          <h1 style={{ fontSize: "26px", fontWeight: 700, letterSpacing: "-0.5px" }}>Connect to ChatGPT</h1>
+          <h1 style={{ fontSize: "26px", fontWeight: 700, letterSpacing: "-0.5px" }}>Connect AI Assistant</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "8px", lineHeight: 1.6 }}>
-            Turn this dashboard into a Custom GPT action so you can log expenses and manage your
+            Turn this dashboard into a custom AI Agent or Custom GPT action so you can log expenses and manage your
             watchlist by chatting — &ldquo;spent 450 on lunch&rdquo;, &ldquo;add Dune to my watchlist&rdquo;, done.
           </p>
         </div>
@@ -156,11 +156,9 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
         <div className="bento-card" style={{ display: "flex", gap: "16px" }}>
           {stepBadge(1)}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Create a Custom GPT</h2>
+            <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Create a Custom GPT or AI Agent</h2>
             <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-              In ChatGPT go to <strong>Explore GPTs → Create</strong> (a ChatGPT Plus/Pro plan is required),
-              open the <strong>Configure</strong> tab, give it a name like <em>&ldquo;My Dashboard&rdquo;</em>, and keep
-              sharing set to <strong>Only me</strong> — this GPT will hold a token to your personal data.
+              In your preferred LLM provider (ChatGPT Explore GPTs, Gemini Gems, or Claude Projects), initiate a new custom assistant creation. Keep sharing set to <strong>Only me</strong> — this agent will hold a token to your personal data.
             </p>
           </div>
         </div>
@@ -171,8 +169,7 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Import the API schema</h2>
             <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "12px" }}>
-              Scroll to <strong>Actions → Create new action</strong>, choose <strong>Import from URL</strong>,
-              and paste the schema URL below. ChatGPT will list all the expense and watchlist operations automatically.
+              In your agent&apos;s developer settings under <strong>Actions</strong> or <strong>Capabilities</strong>, choose to import a schema from a URL and paste the link below. The LLM provider will discover the expense and watchlist API actions automatically.
             </p>
             <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
               <span style={codeStyle}>{schemaUrl}</span>
@@ -214,7 +211,7 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
             )}
 
             <div style={{ marginTop: "14px", backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#065f46", lineHeight: 1.6 }}>
-              <strong>Tokens are persistent.</strong> The generated token is long-lived and stays active until explicitly revoked or refreshed. You don&apos;t need to update it every hour. Treat the token like a password — do not share your GPT.
+              <strong>Tokens are persistent.</strong> The generated token is long-lived and stays active until explicitly revoked or refreshed. Treat the token like a password — do not share your custom agent.
             </div>
           </div>
         </div>
@@ -223,17 +220,17 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
         <div className="bento-card" style={{ display: "flex", gap: "16px" }}>
           {stepBadge(4)}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Teach the GPT how to behave</h2>
+            <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Teach the Agent how to behave</h2>
             <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "12px" }}>
-              Paste this into the GPT&apos;s <strong>Instructions</strong> field (tweak to taste):
+              Paste this into the agent&apos;s <strong>Instructions</strong> or <strong>System Instructions</strong> field:
             </p>
             <pre style={{
               fontFamily: "monospace", fontSize: "11.5px", lineHeight: 1.6,
               backgroundColor: "var(--bg-secondary)", borderRadius: "8px",
               padding: "14px", whiteSpace: "pre-wrap", wordBreak: "break-word",
               color: "var(--text-primary)", maxHeight: "260px", overflowY: "auto",
-            }}>{gptInstructions}</pre>
-            <button onClick={() => copyText("instructions", gptInstructions)} className="btn-secondary" style={{ fontSize: "12px", padding: "6px 12px", marginTop: "10px" }}>
+            }}>{agentInstructions}</pre>
+            <button onClick={() => copyText("instructions", agentInstructions)} className="btn-secondary" style={{ fontSize: "12px", padding: "6px 12px", marginTop: "10px" }}>
               {copied === "instructions" ? "✓ Copied" : "Copy instructions"}
             </button>
           </div>
@@ -245,7 +242,7 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "6px" }}>Try it out</h2>
             <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "12px" }}>
-              Save the GPT and start chatting. Things that should just work:
+              Save the agent and start chatting. Things that should just work:
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {examplePrompts.map((prompt) => (

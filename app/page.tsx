@@ -836,7 +836,42 @@ export default function Dashboard() {
       const res = await fetch("/api/portfolio", { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setInvestments(data.assets || []);
+        const loadedAssets = data.assets || [];
+        setInvestments(loadedAssets);
+        
+        // Quiet background check to load cached prices without triggering api rate limits
+        if (loadedAssets.length > 0) {
+          fetch("/api/portfolio/prices", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ assets: loadedAssets, forceRefresh: false }),
+          }).then(async (pRes) => {
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              const processed = pData.assets.map((asset: any) => {
+                let price = asset.currentPrice; 
+                if (currency === "$") {
+                  price = asset.currentPriceUsd || (asset.currentPrice / (pData.usdToInr || 83.5));
+                } else if (currency === "€") {
+                  price = (asset.currentPriceUsd || (asset.currentPrice / (pData.usdToInr || 83.5))) * 0.92;
+                } else if (currency === "£") {
+                  price = (asset.currentPriceUsd || (asset.currentPrice / (pData.usdToInr || 83.5))) * 0.78;
+                } else if (currency === "¥") {
+                  price = (asset.currentPriceUsd || (asset.currentPrice / (pData.usdToInr || 83.5))) * 155;
+                } else if (currency === "₹") {
+                  price = asset.currentPriceInr || asset.currentPrice;
+                }
+                price = Math.round(price * 100) / 100;
+                return {
+                  ...asset,
+                  currentPrice: price,
+                  amount: asset.quantity ? Math.round(price * asset.quantity * 100) / 100 : asset.amount
+                };
+              });
+              setInvestments(processed);
+            }
+          }).catch(e => console.warn("Quiet price load failed:", e));
+        }
       }
     } catch (err) { console.error(err); }
     finally { setIsFetchingInvestments(false); }
@@ -897,12 +932,18 @@ export default function Dashboard() {
       const res = await fetch("/api/portfolio/prices", {
         method: "POST",
         headers: getHeaders(),
-        body: JSON.stringify({ assets: investments }),
+        body: JSON.stringify({ assets: investments, forceRefresh: true }),
       });
       if (res.ok) {
         const data = await res.json();
-        const updated = data.assets || [];
         
+        if (data.cooldownActive) {
+          setPriceUpdateMsg(`Cooldown active. Wait ${data.cooldownSecondsLeft}s.`);
+          setIsUpdatingPrices(false);
+          return;
+        }
+
+        const updated = data.assets || [];
         const processed = updated.map((asset: any) => {
           let price = asset.currentPrice; 
           if (currency === "$") {
@@ -936,7 +977,7 @@ export default function Dashboard() {
       setPriceUpdateMsg("Failed to connect to API.");
     } finally {
       setIsUpdatingPrices(false);
-      setTimeout(() => setPriceUpdateMsg(""), 3000);
+      setTimeout(() => setPriceUpdateMsg(""), 3500);
     }
   };
 
@@ -1480,9 +1521,9 @@ export default function Dashboard() {
 
         {/* Footer */}
         <div>
-          <a href="/gpt" className="nav-link" style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "14px", borderRadius: 0, fontSize: "12px" }}>
+          <a href="/assistant" className="nav-link" style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "14px", borderRadius: 0, fontSize: "12px" }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
-            Connect to ChatGPT
+            Connect AI Agent
           </a>
           <a href="/api/openapi.json" target="_blank" rel="noopener noreferrer" className="nav-link" style={{ marginBottom: "8px", fontSize: "12px" }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>

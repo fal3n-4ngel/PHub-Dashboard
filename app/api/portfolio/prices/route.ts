@@ -3,7 +3,19 @@ import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Helper to normalize crypto names to Binance symbols
+// In-memory price cache
+interface CacheEntry {
+  priceUsd: number;
+  priceInr: number;
+  timestamp: number;
+}
+const priceCache: Record<string, CacheEntry> = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes TTL
+
+// In-memory user cooldown tracker
+const lastUserRefresh: Record<string, number> = {};
+const REFRESH_COOLDOWN = 30 * 1000; // 30 seconds cooldown limit
+
 function getBinanceSymbol(name: string): string | null {
   const clean = name.trim().toUpperCase();
   if (['BTC', 'BITCOIN'].includes(clean)) return 'BTCUSDT';
@@ -13,19 +25,12 @@ function getBinanceSymbol(name: string): string | null {
   if (['DOGE', 'DOGECOIN'].includes(clean)) return 'DOGEUSDT';
   if (['XRP'].includes(clean)) return 'XRPUSDT';
   if (['BNB'].includes(clean)) return 'BNBUSDT';
-  
-  // Generic fallback if it looks like a symbol
-  if (clean.length >= 3 && clean.length <= 5) {
-    return `${clean}USDT`;
-  }
+  if (clean.length >= 3 && clean.length <= 5) return `${clean}USDT`;
   return null;
 }
 
-// Helper to map stock names to Yahoo Finance tickers
 function getYahooTicker(name: string): string {
   const clean = name.trim().toUpperCase();
-  
-  // Common US stocks mapping
   if (clean === 'APPLE') return 'AAPL';
   if (clean === 'TESLA') return 'TSLA';
   if (clean === 'MICROSOFT') return 'MSFT';
@@ -33,8 +38,6 @@ function getYahooTicker(name: string): string {
   if (clean === 'AMAZON') return 'AMZN';
   if (clean === 'META') return 'META';
   if (clean === 'NVIDIA') return 'NVDA';
-  
-  // Common Indian stocks mapping
   if (clean === 'RELIANCE') return 'RELIANCE.NS';
   if (clean === 'TCS') return 'TCS.NS';
   if (clean === 'HDFC') return 'HDFCBANK.NS';
@@ -42,17 +45,37 @@ function getYahooTicker(name: string): string {
   if (clean === 'ICICI') return 'ICICIBANK.NS';
   if (clean === 'SBI' || clean === 'SBIN') return 'SBIN.NS';
   if (clean === 'TATAMOTORS') return 'TATAMOTORS.NS';
-
-  return clean; // Fallback to raw symbol
+  return clean;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser(req);
+    const session = await requireUser(req);
     const body = await req.json();
     const assets = body?.assets || [];
+    const forceRefresh = !!body?.forceRefresh;
     
-    // Fetch exchange rate USD -> INR for conversion if needed (fallback 83.5)
+    const uid = session.uid;
+    const now = Date.now();
+    
+    let isCooldownActive = false;
+    let secondsLeft = 0;
+    
+    // Check cooldown for force refresh
+    if (forceRefresh && lastUserRefresh[uid]) {
+      const timePassed = now - lastUserRefresh[uid];
+      if (timePassed < REFRESH_COOLDOWN) {
+        isCooldownActive = true;
+        secondsLeft = Math.ceil((REFRESH_COOLDOWN - timePassed) / 1000);
+      }
+    }
+
+    // Update refresh timestamp if we are actually fetching fresh data
+    if (forceRefresh && !isCooldownActive) {
+      lastUserRefresh[uid] = now;
+    }
+
+    // Fetch exchange rate USD -> INR
     let usdToInr = 83.5;
     try {
       const exRes = await fetch("https://open.er-api.com/v6/latest/USD");
@@ -69,7 +92,23 @@ export async function POST(req: NextRequest) {
     const updatedAssets = await Promise.all(assets.map(async (asset: any) => {
       const category = asset.category;
       const name = asset.name;
+      const cacheKey = `${category}:${name}`;
       
+      // Return cached price if valid and we're not doing a valid forceRefresh
+      if (!forceRefresh || isCooldownActive) {
+        const cached = priceCache[cacheKey];
+        if (cached && (now - cached.timestamp < CACHE_TTL)) {
+          return {
+            ...asset,
+            currentPrice: cached.priceInr,
+            currentPriceUsd: cached.priceUsd,
+            currentPriceInr: cached.priceInr,
+            isFromCache: true
+          };
+        }
+      }
+
+      // Fetch new price
       if (category === 'crypto') {
         const binanceSymbol = getBinanceSymbol(name);
         if (binanceSymbol) {
@@ -79,15 +118,14 @@ export async function POST(req: NextRequest) {
               const data = await res.json();
               const priceUsd = parseFloat(data.price);
               if (!isNaN(priceUsd)) {
-                // If the user logs in INR or USD, we can check or convert.
-                // Let's assume the price returned is converted based on user preference or keeps USD for US assets.
-                // We'll return price in USD and INR, or let's default to INR price if currency is INR.
                 const priceInr = priceUsd * usdToInr;
+                priceCache[cacheKey] = { priceUsd, priceInr, timestamp: now };
                 return {
                   ...asset,
-                  currentPrice: priceInr, // Default to INR to keep consistency or converted value
+                  currentPrice: priceInr,
                   currentPriceUsd: priceUsd,
-                  currentPriceInr: priceInr
+                  currentPriceInr: priceInr,
+                  isFromCache: false
                 };
               }
             }
@@ -115,11 +153,13 @@ export async function POST(req: NextRequest) {
                 priceUsd = price / usdToInr;
               }
               
+              priceCache[cacheKey] = { priceUsd, priceInr, timestamp: now };
               return {
                 ...asset,
-                currentPrice: currencyCode === "INR" ? priceInr : priceInr, // Default to INR value
+                currentPrice: priceInr,
                 currentPriceUsd: priceUsd,
-                currentPriceInr: priceInr
+                currentPriceInr: priceInr,
+                isFromCache: false
               };
             }
           }
@@ -128,10 +168,27 @@ export async function POST(req: NextRequest) {
         }
       }
       
-      return asset; // Fallback to original asset if fetch fails
+      // Fallback if APIs fail or not supported, check if old cache exists first
+      const cached = priceCache[cacheKey];
+      if (cached) {
+        return {
+          ...asset,
+          currentPrice: cached.priceInr,
+          currentPriceUsd: cached.priceUsd,
+          currentPriceInr: cached.priceInr,
+          isFromCache: true
+        };
+      }
+      
+      return asset;
     }));
 
-    return NextResponse.json({ assets: updatedAssets, usdToInr });
+    return NextResponse.json({ 
+      assets: updatedAssets, 
+      usdToInr,
+      cooldownActive: isCooldownActive,
+      cooldownSecondsLeft: secondsLeft 
+    });
   } catch (error) {
     console.error("Error in POST /api/portfolio/prices:", error);
     return NextResponse.json({ error: "Failed to fetch prices" }, { status: 500 });
