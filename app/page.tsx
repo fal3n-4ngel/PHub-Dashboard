@@ -413,7 +413,7 @@ export default function Dashboard() {
         const config = await res.json();
 
         const { initializeApp, getApps } = await import("firebase/app");
-        const { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } = await import("firebase/auth");
+        const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } = await import("firebase/auth");
 
         const appName = "dashboard-client";
         const apps = getApps();
@@ -421,7 +421,12 @@ export default function Dashboard() {
         const app = existingApp || initializeApp(config, appName);
         const auth = getAuth(app);
 
-        setFirebaseAuth({ auth, GoogleAuthProvider, signInWithPopup, signOut });
+        setFirebaseAuth({ auth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut });
+
+        // Surfaces errors from the signInWithRedirect fallback below (its
+        // result only arrives after the full round-trip back to this page,
+        // so it can't be awaited inline where signInWithRedirect is called).
+        getRedirectResult(auth).catch((err: any) => setAuthError(err.message));
 
         unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
           if (fbUser) {
@@ -446,7 +451,16 @@ export default function Dashboard() {
    * the Firebase idToken — so it can't fire here on mount (Firebase auth may not have
    * resolved yet). Tokens are just persisted to localStorage here; the "load saved
    * tokens" effect below (keyed on `user`) does the actual Trakt profile fetch once
-   * auth is ready. AniList's client-only API has no such requirement. */
+   * auth is ready. AniList's client-only API has no such requirement.
+   *
+   * These refs flag "a connect just happened in this exact page load" so the
+   * owner-matching effects below can tell a brand-new connection (no owner
+   * stamp yet, but clearly this browser's current Firebase user's own doing)
+   * apart from a stale token left over from a previous account on the same
+   * browser (also no reliable stamp, but must NOT be trusted or displayed). */
+  const anilistJustConnected = useRef(false);
+  const traktJustConnected = useRef(false);
+
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash) return;
@@ -462,26 +476,66 @@ export default function Dashboard() {
 
     if (anilistToken) {
       localStorage.setItem("anilist_token", anilistToken);
+      anilistJustConnected.current = true;
       loadAnilistUser(anilistToken);
     }
     if (traktAccessToken && traktRefreshToken) {
       localStorage.setItem("trakt_access_token", traktAccessToken);
       localStorage.setItem("trakt_refresh_token", traktRefreshToken);
+      traktJustConnected.current = true;
     }
   }, []);
 
-  /* ─── AniList: Load saved token on mount ─── */
+  /* ─── AniList: load saved token once Firebase auth is ready ───
+   * A saved token only auto-loads if it's stamped as belonging to the
+   * currently signed-in Firebase uid (or was just connected this session).
+   * Otherwise it's a leftover from a previous account on this browser —
+   * cleared instead of silently displayed under the new account. */
   useEffect(() => {
     const savedToken = localStorage.getItem("anilist_token");
-    if (savedToken) loadAnilistUser(savedToken);
-  }, []);
+    if (!savedToken || !user) return;
 
-  /* ─── Trakt: Load saved tokens once Firebase auth is ready ─── */
+    if (anilistJustConnected.current) {
+      anilistJustConnected.current = false;
+      localStorage.setItem("anilist_owner_uid", user.uid);
+      return; // already loaded synchronously in the redirect-handling effect above
+    }
+
+    const ownerUid = localStorage.getItem("anilist_owner_uid");
+    if (ownerUid !== user.uid) {
+      localStorage.removeItem("anilist_token");
+      localStorage.removeItem("anilist_owner_uid");
+      setAnilistUser(null);
+      return;
+    }
+
+    loadAnilistUser(savedToken);
+  }, [user]);
+
+  /* ─── Trakt: load saved tokens once Firebase auth is ready ───
+   * Same owner-matching guard as AniList above. */
   useEffect(() => {
-    if (!user) return;
     const savedAccessToken = localStorage.getItem("trakt_access_token");
     const savedRefreshToken = localStorage.getItem("trakt_refresh_token");
-    if (savedAccessToken && savedRefreshToken) loadTraktUser(savedAccessToken, savedRefreshToken, user.idToken);
+    if (!savedAccessToken || !savedRefreshToken || !user) return;
+
+    if (traktJustConnected.current) {
+      traktJustConnected.current = false;
+      localStorage.setItem("trakt_owner_uid", user.uid);
+      loadTraktUser(savedAccessToken, savedRefreshToken, user.idToken);
+      return;
+    }
+
+    const ownerUid = localStorage.getItem("trakt_owner_uid");
+    if (ownerUid !== user.uid) {
+      localStorage.removeItem("trakt_access_token");
+      localStorage.removeItem("trakt_refresh_token");
+      localStorage.removeItem("trakt_owner_uid");
+      setTraktUser(null);
+      return;
+    }
+
+    loadTraktUser(savedAccessToken, savedRefreshToken, user.idToken);
   }, [user]);
 
   /* ─── Token refresh for Firebase ─── */
@@ -651,6 +705,7 @@ export default function Dashboard() {
 
   function disconnectAnilist() {
     localStorage.removeItem("anilist_token");
+    localStorage.removeItem("anilist_owner_uid");
     setAnilistUser(null);
   }
 
@@ -759,6 +814,7 @@ export default function Dashboard() {
   function disconnectTrakt() {
     localStorage.removeItem("trakt_access_token");
     localStorage.removeItem("trakt_refresh_token");
+    localStorage.removeItem("trakt_owner_uid");
     setTraktUser(null);
   }
 
@@ -1591,12 +1647,33 @@ export default function Dashboard() {
   }
 
   if (!user) {
+    // Popup blocking depends on the browser/profile/extensions (some Chrome
+    // instances block third-party popups by default, some corporate policies
+    // disable them entirely) — there's no way to prevent it from our side.
+    // Falling back to a full-page redirect sidesteps the popup requirement
+    // altogether; onAuthStateChanged + getRedirectResult above pick up the
+    // session once the user is redirected back.
+    const POPUP_FALLBACK_CODES = new Set([
+      "auth/popup-blocked",
+      "auth/popup-closed-by-user",
+      "auth/cancelled-popup-request",
+      "auth/operation-not-supported-in-this-environment",
+    ]);
+
     const handleGoogleLogin = async () => {
       if (!firebaseAuth) return;
       try {
         await firebaseAuth.signInWithPopup(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider());
       } catch (e: any) {
-        setAuthError(e.message);
+        if (POPUP_FALLBACK_CODES.has(e.code)) {
+          try {
+            await firebaseAuth.signInWithRedirect(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider());
+          } catch (redirectErr: any) {
+            setAuthError(redirectErr.message);
+          }
+        } else {
+          setAuthError(e.message);
+        }
       }
     };
 
@@ -1638,6 +1715,8 @@ export default function Dashboard() {
                     setExpenses([]);
                     setWatchlist([]);
                     setExpensesLoaded(false);
+                    disconnectAnilist();
+                    disconnectTrakt();
                   }
                 }, false, "Sign Out");
               }}
@@ -1761,7 +1840,7 @@ export default function Dashboard() {
               <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.displayName || "User"}</p>
               <p style={{ fontSize: "10px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</p>
             </div>
-            <button onClick={async () => { if (firebaseAuth) await firebaseAuth.signOut(firebaseAuth.auth); setExpenses([]); setWatchlist([]); setExpensesLoaded(false); }} title="Sign out" style={{ backgroundColor: "transparent", padding: "4px", color: "var(--text-muted)" }}>
+            <button onClick={async () => { if (firebaseAuth) await firebaseAuth.signOut(firebaseAuth.auth); setExpenses([]); setWatchlist([]); setExpensesLoaded(false); disconnectAnilist(); disconnectTrakt(); }} title="Sign out" style={{ backgroundColor: "transparent", padding: "4px", color: "var(--text-muted)" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
           </div>
