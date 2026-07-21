@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Personal Hub Dashboard",
+  title: "PHub Dashboard",
   description: "Dynamic tracking dashboard for expenses, movies, TV series, and anime.",
 };
 

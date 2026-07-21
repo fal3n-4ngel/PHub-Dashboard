@@ -529,7 +529,8 @@ export async function bulkSyncWatchlist(
       const changed =
         match.item.status !== entry.status ||
         Number(match.item.progress || 0) !== Number(entry.progress || 0) ||
-        Number(match.item.rating || 0) !== Number(entry.rating || 0);
+        Number(match.item.rating || 0) !== Number(entry.rating || 0) ||
+        (entry.coverImage && match.item.coverImage !== entry.coverImage);
 
       if (!changed) {
         skipped++;
@@ -540,6 +541,7 @@ export async function bulkSyncWatchlist(
         status: entry.status,
         progress: entry.progress,
         rating: entry.rating,
+        ...(entry.coverImage ? { coverImage: entry.coverImage } : {}),
         updatedAt: now,
       };
       updated++;

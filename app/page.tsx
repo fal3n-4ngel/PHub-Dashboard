@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import LandingPage from "./components/LandingPage";
 
 /* ─── Types ─── */
 interface FirebaseUser {
@@ -138,6 +139,8 @@ export default function Dashboard() {
 
   /* ─── Filters ─── */
   const [timeFilter, setTimeFilter] = useState("all");
+  const [salaryStartDay, setSalaryStartDay] = useState<number>(25);
+  const [activeChart, setActiveChart] = useState<"category" | "trend">("category");
 
   /* ─── Expenses State ─── */
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -147,6 +150,8 @@ export default function Dashboard() {
   const [expenseDate, setExpenseDate] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseSearch, setExpenseSearch] = useState("");
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
   const [isAddingExpense, setIsAddingExpense] = useState(false);
   const [isFetchingExpenses, setIsFetchingExpenses] = useState(false);
 
@@ -160,7 +165,18 @@ export default function Dashboard() {
   const [watchlistFilter, setWatchlistFilter] = useState<"all" | "anime" | "movie" | "show">("all");
   const [watchlistTab, setWatchlistTab] = useState<"watching" | "plan" | "completed">("watching");
   const [mediaCategory, setMediaCategory] = useState<"general" | "anime">("general");
+  /* ─── Load salary cycle preference ─── */
+  useEffect(() => {
+    const savedDay = localStorage.getItem("salary_start_day");
+    if (savedDay) {
+      setSalaryStartDay(Number(savedDay));
+    }
+  }, []);
 
+  const updateSalaryStartDay = (day: number) => {
+    setSalaryStartDay(day);
+    localStorage.setItem("salary_start_day", String(day));
+  };
   /* ─── Bootstrap Firebase Auth ─── */
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -425,6 +441,8 @@ export default function Dashboard() {
           coverImage: null,
           year: media.year || null,
           traktId: media.ids.trakt,
+          imdbId: media.ids.imdb || null,
+          tvdbId: media.ids.tvdb || null,
         });
       });
 
@@ -441,6 +459,8 @@ export default function Dashboard() {
           coverImage: null,
           year: media.year || null,
           traktId: media.ids.trakt,
+          imdbId: media.ids.imdb || null,
+          tvdbId: media.ids.tvdb || null,
         });
       });
 
@@ -471,10 +491,54 @@ export default function Dashboard() {
           coverImage: null,
           year: media.year || null,
           traktId: media.ids.trakt,
+          imdbId: media.ids.imdb || null,
+          tvdbId: media.ids.tvdb || null,
         });
       });
 
       const normalized = Array.from(byTraktId.values());
+      setTraktSyncMsg("Fetching cover images...");
+      
+      const tmdbApiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
+      await Promise.all(
+        normalized.map(async (item: any) => {
+          // 1. If TMDb API key is set, use find API to get poster for movies/shows
+          if (item.imdbId && tmdbApiKey) {
+            try {
+              const res = await fetch(`https://api.themoviedb.org/3/find/${item.imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`);
+              if (res.ok) {
+                const searchData = await res.json();
+                const movie = searchData.movie_results?.[0];
+                const show = searchData.tv_results?.[0];
+                const posterPath = movie?.poster_path || show?.poster_path;
+                if (posterPath) {
+                  item.coverImage = `https://image.tmdb.org/t/p/w185${posterPath}`;
+                }
+              }
+            } catch (err) {
+              console.error("TMDb poster fetch failed:", err);
+            }
+          }
+          // 2. Fallback to TVmaze for shows if coverImage is still null
+          if (item.type === "show" && !item.coverImage) {
+            const queryParam = item.imdbId ? `imdb=${item.imdbId}` : item.tvdbId ? `thetvdb=${item.tvdbId}` : null;
+            if (queryParam) {
+              try {
+                const res = await fetch(`https://api.tvmaze.com/lookup/shows?${queryParam}`);
+                if (res.ok) {
+                  const showData = await res.json();
+                  if (showData.image?.medium) {
+                    item.coverImage = showData.image.medium;
+                  }
+                }
+              } catch (err) {
+                console.error("TVmaze poster fetch failed:", err);
+              }
+            }
+          }
+        })
+      );
+
       setTraktSyncMsg(`Syncing ${normalized.length} entries to Firestore...`);
       const result = await syncEntriesToWatchlist("trakt", normalized);
 
@@ -654,13 +718,39 @@ export default function Dashboard() {
     finally { setIsSearchingMedia(false); }
   };
 
+  const getSalaryCycleRange = (salaryDay: number) => {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0-indexed
+    const currentDate = today.getDate();
+
+    let startDate: Date;
+    let endDate: Date;
+
+    if (currentDate >= salaryDay) {
+      startDate = new Date(currentYear, currentMonth, salaryDay);
+      endDate = new Date(currentYear, currentMonth + 1, salaryDay - 1);
+    } else {
+      startDate = new Date(currentYear, currentMonth - 1, salaryDay);
+      endDate = new Date(currentYear, currentMonth, salaryDay - 1);
+    }
+
+    return {
+      startStr: startDate.toISOString().slice(0, 10),
+      endStr: endDate.toISOString().slice(0, 10),
+    };
+  };
+
   /* ─── Derived data ───
    * Search/time filtering happens client-side against the one cached fetch of
    * expenses, instead of re-querying Firestore on every keystroke. */
   const filteredExpenses = (() => {
     let list = expenses;
 
-    if (timeFilter !== "all") {
+    if (timeFilter === "salary") {
+      const { startStr, endStr } = getSalaryCycleRange(salaryStartDay);
+      list = list.filter((e) => e.date && e.date >= startStr && e.date <= endStr);
+    } else if (timeFilter !== "all") {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - Number(timeFilter));
       const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -678,6 +768,18 @@ export default function Dashboard() {
     return list;
   })();
 
+  const dailyTrend = (() => {
+    const dailyMap: Record<string, number> = {};
+    filteredExpenses.forEach((e) => {
+      if (e.date) {
+        dailyMap[e.date] = (dailyMap[e.date] || 0) + (e.amount || 0);
+      }
+    });
+    return Object.entries(dailyMap)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-10); // Show last 10 days of transactions in chart
+  })();
+
   const totalSpent = filteredExpenses.reduce((s, e) => s + (e.amount || 0), 0);
   const largestCharge = filteredExpenses.length > 0 ? Math.max(...filteredExpenses.map((e) => e.amount || 0)) : 0;
   const largestItem = filteredExpenses.find((e) => e.amount === largestCharge);
@@ -690,6 +792,14 @@ export default function Dashboard() {
 
   const topCategory = Object.keys(catBreakdown).length > 0
     ? Object.entries(catBreakdown).sort((a, b) => b[1] - a[1])[0][0] : "None";
+
+  const allCategories = Array.from(
+    new Set([
+      "Food", "Travel", "Rent", "Utilities", "Entertainment", "Shopping", "Others",
+      ...expenses.map((e) => e.category || "").filter(Boolean),
+      ...customCategories
+    ])
+  ).sort();
 
   const watchingCount = watchlist.filter((i) => i.status === "watching").length;
   const planCount     = watchlist.filter((i) => i.status === "plan_to_watch").length;
@@ -725,28 +835,21 @@ export default function Dashboard() {
   }
 
   if (!user) {
+    const handleGoogleLogin = async () => {
+      if (!firebaseAuth) return;
+      try {
+        await firebaseAuth.signInWithPopup(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider());
+      } catch (e: any) {
+        setAuthError(e.message);
+      }
+    };
+
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", backgroundColor: "var(--bg-primary)" }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div className="bento-card" style={{ width: "360px", textAlign: "center", padding: "48px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "21px", fontWeight: 700, letterSpacing: "-0.5px" }}>Personal Hub</span>
-          </div>
-          <div>
-            <h2 style={{ fontSize: "19px", fontWeight: 600, marginBottom: "6px" }}>Welcome back</h2>
-            <p style={{ color: "var(--text-secondary)", fontSize: "13px" }}>Sign in to access your dashboard</p>
-          </div>
-          {authError && <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", width: "100%", fontSize: "12px", color: "#dc2626" }}>{authError}</div>}
-          <button onClick={async () => { if (!firebaseAuth) return; try { await firebaseAuth.signInWithPopup(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider()); } catch(e: any) { setAuthError(e.message); } }}
-            disabled={!firebaseAuth}
-            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", backgroundColor: "var(--text-primary)", color: "#fff", padding: "13px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, cursor: firebaseAuth ? "pointer" : "not-allowed", opacity: firebaseAuth ? 1 : 0.6 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Sign in with Google
-          </button>
-          <p style={{ color: "var(--text-muted)", fontSize: "11px" }}>Data is stored privately by your Google account.</p>
-        </div>
-      </div>
+      <LandingPage
+        onLogin={handleGoogleLogin}
+        authError={authError}
+        firebaseAuthReady={!!firebaseAuth}
+      />
     );
   }
 
@@ -755,12 +858,51 @@ export default function Dashboard() {
     <div className="app-container">
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
+      {/* Mobile Header */}
+      <header className="mobile-header">
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
+          <span style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "-0.3px" }}>PHub Dashboard</span>
+        </div>
+        <div>
+          {user && (
+            <img
+              src={user.photoURL || undefined}
+              alt="Profile"
+              onClick={async () => {
+                if (confirm("Sign out?")) {
+                  if (firebaseAuth) {
+                    await firebaseAuth.signOut(firebaseAuth.auth);
+                    setExpenses([]);
+                    setWatchlist([]);
+                  }
+                }
+              }}
+              style={{
+                width: "28px",
+                height: "28px",
+                borderRadius: "50%",
+                backgroundColor: "var(--text-primary)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                fontWeight: 600,
+                cursor: "pointer",
+                objectFit: "cover"
+              }}
+            />
+          )}
+        </div>
+      </header>
+
       {/* ─── Sidebar ─── */}
       <aside className="sidebar">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "28px", paddingLeft: "8px" }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>Personal Hub</span>
+            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>PHub Dashboard</span>
           </div>
           <nav>
             <div onClick={() => setActiveTab("expenses")} className={`nav-link ${activeTab === "expenses" ? "active" : ""}`}>
@@ -868,11 +1010,28 @@ export default function Dashboard() {
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             {activeTab === "expenses" && (
-              <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)} style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "6px" }}>
-                <option value="all">All time</option>
-                <option value="30">Last 30 days</option>
-                <option value="7">Last 7 days</option>
-              </select>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {timeFilter === "salary" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
+                    <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Cycle Start Day:</span>
+                    <select
+                      value={salaryStartDay}
+                      onChange={(e) => updateSalaryStartDay(Number(e.target.value))}
+                      style={{ padding: "4px 8px", fontSize: "12px", borderRadius: "6px" }}
+                    >
+                      {[...Array(31)].map((_, i) => (
+                        <option key={i + 1} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)} style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "6px" }}>
+                  <option value="all">All time</option>
+                  <option value="salary">Current Salary Cycle</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="7">Last 7 days</option>
+                </select>
+              </div>
             )}
           </div>
         </header>
@@ -880,7 +1039,7 @@ export default function Dashboard() {
         {/* ─── EXPENSES TAB ─── */}
         {activeTab === "expenses" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+            <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
               <div className="stat-card"><span className="label-mono">Total Spent</span><span className="stat-value">₹{totalSpent.toLocaleString("en-IN")}</span><span className="stat-subtext">{timeFilter === "all" ? "All time" : `Last ${timeFilter} days`}</span></div>
               <div className="stat-card"><span className="label-mono">Charges Logged</span><span className="stat-value" style={{ color: "#b3666b" }}>{filteredExpenses.length}</span><span className="stat-subtext">Transactions</span></div>
               <div className="stat-card"><span className="label-mono">Largest Charge</span><span className="stat-value" style={{ color: "#e39282", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>₹{largestCharge.toLocaleString("en-IN")}</span><span className="stat-subtext" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{largestItem?.title || "—"}</span></div>
@@ -889,35 +1048,136 @@ export default function Dashboard() {
 
             {/* Chart */}
             <div className="bento-card">
-              <h3 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "24px" }}>Category Distribution</h3>
-              <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
-                {Object.entries(catBreakdown).slice(0, 8).map(([cat, total], idx) => {
-                  const maxAmt = Math.max(...Object.values(catBreakdown), 1);
-                  const pct = (total / maxAmt) * 100;
-                  const colors = ["#b3666b", "#e39282", "#1c1b18", "#6e6c64", "#d1b89a", "#eae8e0", "#9c9a92", "#c4c2ba"];
-                  return (
-                    <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
-                      <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{(total/1000).toFixed(0)}k</span>
-                      <div style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
-                        <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
-                      </div>
-                      <span style={{ fontSize: "9px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
-                    </div>
-                  );
-                })}
-                {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transactions to plot.</p>}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600 }}>Analytics</h3>
+                <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
+                  <button
+                    onClick={() => setActiveChart("category")}
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "5px 12px",
+                      backgroundColor: activeChart === "category" ? "#fff" : "transparent",
+                      color: activeChart === "category" ? "var(--text-primary)" : "var(--text-secondary)",
+                      borderRadius: "6px",
+                      boxShadow: activeChart === "category" ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
+                      transition: "all 0.2s",
+                      border: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Category Distribution
+                  </button>
+                  <button
+                    onClick={() => setActiveChart("trend")}
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "5px 12px",
+                      backgroundColor: activeChart === "trend" ? "#fff" : "transparent",
+                      color: activeChart === "trend" ? "var(--text-primary)" : "var(--text-secondary)",
+                      borderRadius: "6px",
+                      boxShadow: activeChart === "trend" ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
+                      transition: "all 0.2s",
+                      border: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Daily Trend
+                  </button>
+                </div>
               </div>
+
+              {activeChart === "category" ? (
+                <div className="chart-container" style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
+                  {Object.entries(catBreakdown).slice(0, 8).map(([cat, total], idx) => {
+                    const maxAmt = Math.max(...Object.values(catBreakdown), 1);
+                    const pct = (total / maxAmt) * 100;
+                    const colors = ["#b3666b", "#e39282", "#1c1b18", "#6e6c64", "#d1b89a", "#eae8e0", "#9c9a92", "#c4c2ba"];
+                    return (
+                      <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
+                        <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{(total/1000).toFixed(0)}k</span>
+                        <div className="chart-bar-container" style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
+                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
+                        </div>
+                        <span style={{ fontSize: "9px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
+                      </div>
+                    );
+                  })}
+                  {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transactions to plot.</p>}
+                </div>
+              ) : (
+                <div className="chart-container" style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
+                  {dailyTrend.map(([date, total], idx) => {
+                    const maxAmt = Math.max(...dailyTrend.map(d => d[1]), 1);
+                    const pct = (total / maxAmt) * 100;
+                    // Format date to MM/DD
+                    const dateParts = date.split("-");
+                    const dateFormatted = dateParts.length === 3 ? `${dateParts[1]}/${dateParts[2]}` : date;
+                    return (
+                      <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
+                        <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{total.toLocaleString("en-IN")}</span>
+                        <div className="chart-bar-container" style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
+                          <div style={{ width: "100%", height: `${pct}%`, backgroundColor: "#3b82f6", borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
+                        </div>
+                        <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--text-muted)", textAlign: "center", width: "100%" }}>{dateFormatted}</span>
+                      </div>
+                    );
+                  })}
+                  {dailyTrend.length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transaction history to plot.</p>}
+                </div>
+              )}
             </div>
 
             {/* Form + table */}
-            <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
+            <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                 <div className="bento-card">
                   <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Log Transaction</span>
                   <form onSubmit={addExpense} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
                     <input type="text" value={expenseTitle} onChange={(e) => setExpenseTitle(e.target.value)} placeholder="Description" required />
                     <input type="number" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="Amount (₹)" required />
-                    <input type="text" value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)} placeholder="Category" />
+                    
+                    <select value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)} required style={{ width: "100%" }}>
+                      <option value="">Select Category</option>
+                      {allCategories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <input
+                        type="text"
+                        value={newCategoryInput}
+                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                        placeholder="New category..."
+                        style={{ flex: 1, fontSize: "11px", padding: "6px 8px" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = newCategoryInput.trim();
+                          if (trimmed && !customCategories.includes(trimmed)) {
+                            setCustomCategories((prev) => [...prev, trimmed]);
+                            setExpenseCategory(trimmed);
+                            setNewCategoryInput("");
+                          }
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          fontSize: "11px",
+                          backgroundColor: "var(--bg-secondary)",
+                          color: "var(--text-primary)",
+                          fontWeight: 600,
+                          borderRadius: "6px",
+                          border: "1px solid var(--border-subtle)",
+                          cursor: "pointer"
+                        }}
+                      >
+                        + Add
+                      </button>
+                    </div>
+
                     <input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
                     <input type="text" value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} placeholder="Notes" />
                     <button type="submit" disabled={isAddingExpense} className="btn-primary" style={{ marginTop: "4px" }}>{isAddingExpense ? "Logging..." : "Log Item"}</button>
@@ -939,21 +1199,23 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px", height: "550px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
                   <span className="label-mono">Ledger Sheet</span>
                   <input type="text" value={expenseSearch} onChange={(e) => setExpenseSearch(e.target.value)} placeholder="Search..." style={{ fontSize: "12px", padding: "6px 12px", width: "180px" }} />
                 </div>
-                <div style={{ overflowX: "auto" }}>
+                <div style={{ overflowY: "auto", overflowX: "auto", flex: 1, paddingRight: "4px" }}>
                   {isFetchingExpenses ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px", fontSize: "13px" }}>Loading...</p> : (
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                      <thead><tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Description</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Category</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Date</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "right" }}>Amount</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "center" }}></th>
-                      </tr></thead>
+                      <thead>
+                        <tr style={{ color: "var(--text-secondary)" }}>
+                          <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left", position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1, borderBottom: "1px solid var(--border-subtle)" }}>Description</th>
+                          <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left", position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1, borderBottom: "1px solid var(--border-subtle)" }}>Category</th>
+                          <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left", position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1, borderBottom: "1px solid var(--border-subtle)" }}>Date</th>
+                          <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "right", position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1, borderBottom: "1px solid var(--border-subtle)" }}>Amount</th>
+                          <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "center", position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1, borderBottom: "1px solid var(--border-subtle)" }}></th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {filteredExpenses.map((e) => (
                           <tr key={e.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
@@ -979,7 +1241,7 @@ export default function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
 
             {/* Stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
+            <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
               <div className="stat-card"><span className="label-mono">Watching Now</span><span className="stat-value">{watchingCount}</span><span className="stat-subtext">Active items</span></div>
               <div className="stat-card"><span className="label-mono">Plan to Watch</span><span className="stat-value" style={{ color: "#b3666b" }}>{planCount}</span><span className="stat-subtext">Queued</span></div>
               <div className="stat-card"><span className="label-mono">Completed</span><span className="stat-value" style={{ color: "#e39282" }}>{completedCount}</span><span className="stat-subtext">Finished</span></div>
@@ -994,49 +1256,77 @@ export default function Dashboard() {
             </div>
 
             {/* AniList sync banner */}
-            {anilistUser && (
-              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px" }}>
+            {anilistUser ? (
+              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
                 {anilistUser.avatar && <img src={anilistUser.avatar} alt="AL" style={{ width: "36px", height: "36px", borderRadius: "50%" }} />}
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: "150px" }}>
                   <p style={{ fontSize: "13px", fontWeight: 600, color: "#1e40af" }}>AniList connected as {anilistUser.name}</p>
                   <p style={{ fontSize: "11px", color: "#3b82f6", marginTop: "2px" }}>
                     {anilistSyncMsg || "Import your full AniList library and keep progress synced both ways."}
                   </p>
                 </div>
-                <button onClick={syncAnilistLibrary} disabled={isSyncingAnilist} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
-                  {isSyncingAnilist ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
-                      Syncing...
-                    </span>
-                  ) : "↓ Sync Library"}
-                </button>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button onClick={syncAnilistLibrary} disabled={isSyncingAnilist} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
+                    {isSyncingAnilist ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
+                        Syncing...
+                      </span>
+                    ) : "↓ Sync Library"}
+                  </button>
+                  <button onClick={disconnectAnilist} title="Disconnect AniList" style={{ backgroundColor: "transparent", border: "none", color: "#ef4444", cursor: "pointer", padding: "4px" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "50%", backgroundColor: "var(--accent-anime)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "12px" }}>AL</div>
+                <div style={{ flex: 1, minWidth: "150px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: 600 }}>Connect AniList</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>Sync your anime and manga watch progress automatically.</p>
+                </div>
+                <button onClick={connectAnilist} className="btn-primary" style={{ fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>Connect</button>
               </div>
             )}
 
             {/* Trakt sync banner */}
-            {traktUser && (
-              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px" }}>
+            {traktUser ? (
+              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
                 {traktUser.avatar && <img src={traktUser.avatar} alt="Trakt" style={{ width: "36px", height: "36px", borderRadius: "50%" }} />}
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: "150px" }}>
                   <p style={{ fontSize: "13px", fontWeight: 600, color: "#1e40af" }}>Trakt connected as {traktUser.name || traktUser.username}</p>
                   <p style={{ fontSize: "11px", color: "#3b82f6", marginTop: "2px" }}>
                     {traktSyncMsg || "Import your Trakt watchlist and watched history for movies & shows."}
                   </p>
                 </div>
-                <button onClick={syncTraktLibrary} disabled={isSyncingTrakt} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
-                  {isSyncingTrakt ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
-                      Syncing...
-                    </span>
-                  ) : "↓ Sync Library"}
-                </button>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button onClick={syncTraktLibrary} disabled={isSyncingTrakt} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
+                    {isSyncingTrakt ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
+                        Syncing...
+                      </span>
+                    ) : "↓ Sync Library"}
+                  </button>
+                  <button onClick={disconnectTrakt} title="Disconnect Trakt" style={{ backgroundColor: "transparent", border: "none", color: "#ef4444", cursor: "pointer", padding: "4px" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "50%", backgroundColor: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "12px" }}>TR</div>
+                <div style={{ flex: 1, minWidth: "150px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: 600 }}>Connect Trakt</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>Sync your movies and TV shows watch progress automatically.</p>
+                </div>
+                <button onClick={connectTrakt} className="btn-primary" style={{ fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>Connect</button>
               </div>
             )}
 
             {/* Content grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
+            <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
               {/* Search */}
               <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px", alignSelf: "start" }}>
                 <div>
@@ -1115,7 +1405,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Right: Sub-filters and Status Tabs */}
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                       {/* Sub-type filter for general (Movies & Shows) */}
                       {mediaCategory === "general" && (
                         <select
@@ -1161,11 +1451,11 @@ export default function Dashboard() {
                     : filteredWatchlist.length === 0
                     ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Nothing here yet.</p>
                     : filteredWatchlist.map((item) => (
-                      <div key={item.id} style={{ display: "flex", gap: "12px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
+                      <div key={item.id} style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
                         {item.coverImage ? <img src={item.coverImage} alt={item.title} style={{ width: "38px", height: "54px", objectFit: "cover", borderRadius: "6px" }} /> : <div style={{ width: "38px", height: "54px", backgroundColor: "var(--bg-secondary)", borderRadius: "6px" }}></div>}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <p style={{ fontSize: "14px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
+                            <p style={{ fontSize: "14px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{item.title}</p>
                             {/* Sync indicator */}
                             {item.anilistId && anilistUser && (
                               <span title="Synced with AniList" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#3b82f6", flexShrink: 0 }}></span>
@@ -1206,6 +1496,18 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* Mobile Bottom Nav */}
+      <nav className="mobile-bottom-nav">
+        <div onClick={() => setActiveTab("expenses")} className={`mobile-nav-link ${activeTab === "expenses" ? "active" : ""}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span style={{ marginTop: "2px" }}>Ledger</span>
+        </div>
+        <div onClick={() => setActiveTab("media")} className={`mobile-nav-link ${activeTab === "media" ? "active" : ""}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          <span style={{ marginTop: "2px" }}>Watchlist</span>
+        </div>
+      </nav>
     </div>
   );
 }
