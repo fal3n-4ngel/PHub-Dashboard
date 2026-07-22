@@ -293,12 +293,6 @@ export async function POST(req: NextRequest) {
     const config = parseFirebaseConfig(creds);
     const user = await verifyIdToken(config, idToken);
 
-    // Only allow configured Admin to link ChatGPT (prevent random access)
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "adiad.dev@gmail.com";
-    if (user.email !== adminEmail) {
-      return NextResponse.json({ error: "Access Denied: Only the admin can authorize ChatGPT." }, { status: 403 });
-    }
-
     if (!redis) {
       return NextResponse.json({ error: "Upstash Redis DB is offline." }, { status: 500 });
     }
