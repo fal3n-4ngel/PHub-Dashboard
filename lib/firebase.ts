@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { Session } from "./auth";
 import { ApiError } from "./errors";
 import { cacheGet, cacheSet, cacheInvalidate } from "./cache";
+import { encrypt, decrypt } from "./encryption";
 
 export interface ExpenseEntry {
   title: string;
@@ -217,15 +218,23 @@ async function getRawExpenses(session: Session): Promise<ExpenseRecord[]> {
   if (cached) return cached;
 
   const rows = await runOwnedQuery(session, "expenses");
-  const records: ExpenseRecord[] = rows.map(({ id, data }) => ({
-    id,
-    title: (data.title as string) || "Untitled",
-    amount: typeof data.amount === "number" ? data.amount : null,
-    category: (data.category as string) || null,
-    date: (data.date as string) || null,
-    notes: (data.notes as string) || null,
-    createdAt: typeof data.createdAt === "number" ? data.createdAt : 0,
-  }));
+  const records: ExpenseRecord[] = rows.map(({ id, data }) => {
+    const title = decrypt(data.title as string || "");
+    const category = decrypt(data.category as string || "");
+    const notes = decrypt(data.notes as string || "");
+    const amountStr = typeof data.amount === "string" ? decrypt(data.amount) : String(data.amount ?? "");
+    const amountParsed = amountStr ? parseFloat(amountStr) : null;
+    
+    return {
+      id,
+      title: title || "Untitled",
+      amount: (amountParsed === null || isNaN(amountParsed)) ? null : amountParsed,
+      category: category || null,
+      date: (data.date as string) || null,
+      notes: notes || null,
+      createdAt: typeof data.createdAt === "number" ? data.createdAt : 0,
+    };
+  });
 
   await cacheSet(cacheKey, records, EXPENSE_CACHE_TTL);
   return records;
@@ -289,11 +298,11 @@ export async function getCategories(session: Session): Promise<{ id: string; nam
 export async function createExpense(session: Session, entry: ExpenseEntry) {
   const docData = {
     userId: session.uid, // Partition by User UID; rules require it to match the token
-    title: entry.title,
-    amount: entry.amount,
-    category: entry.category || null,
+    title: encrypt(entry.title),
+    amount: encrypt(String(entry.amount)),
+    category: entry.category ? encrypt(entry.category) : null,
     date: entry.date || new Date().toISOString().slice(0, 10),
-    notes: entry.notes || null,
+    notes: entry.notes ? encrypt(entry.notes) : null,
     createdAt: Date.now(),
   };
 
@@ -345,11 +354,11 @@ export async function updateExpense(session: Session, id: string, entry: Partial
   assertDocId(id, "expense");
 
   const updateData: Record<string, unknown> = {};
-  if (entry.title !== undefined) updateData.title = entry.title;
-  if (entry.amount !== undefined) updateData.amount = entry.amount;
-  if (entry.category !== undefined) updateData.category = entry.category || null;
+  if (entry.title !== undefined) updateData.title = encrypt(entry.title);
+  if (entry.amount !== undefined) updateData.amount = entry.amount !== null ? encrypt(String(entry.amount)) : null;
+  if (entry.category !== undefined) updateData.category = entry.category ? encrypt(entry.category) : null;
   if (entry.date !== undefined) updateData.date = entry.date || null;
-  if (entry.notes !== undefined) updateData.notes = entry.notes || null;
+  if (entry.notes !== undefined) updateData.notes = entry.notes ? encrypt(entry.notes) : null;
 
   const params = new URLSearchParams();
   // The mask never includes userId, so ownership can't be reassigned; the

@@ -26,6 +26,7 @@ export default function AdminPage() {
     portfolioValue: number;
   } | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [gptMetrics, setGptMetrics] = useState<any>(null);
 
   // Operation states
   const [cronRunning, setCronRunning] = useState<string | null>(null);
@@ -87,17 +88,19 @@ export default function AdminPage() {
           Authorization: `Bearer ${user.idToken}`,
         };
 
-        const [expRes, subRes, watchRes, portRes] = await Promise.all([
+        const [expRes, subRes, watchRes, portRes, metricsRes] = await Promise.all([
           fetch("/api/expenses", { headers }),
           fetch("/api/subscriptions", { headers }),
           fetch("/api/watchlist", { headers }),
           fetch("/api/portfolio", { headers }),
+          fetch("/api/admin/metrics", { headers }),
         ]);
 
         const expenses = expRes.ok ? await expRes.json() : [];
         const subscriptions = subRes.ok ? await subRes.json() : [];
         const watchlist = watchRes.ok ? await watchRes.json() : [];
         const portfolio = portRes.ok ? await portRes.json() : null;
+        const metrics = metricsRes.ok ? await metricsRes.json() : null;
 
         const portAssets = Array.isArray(portfolio) 
           ? portfolio 
@@ -112,6 +115,7 @@ export default function AdminPage() {
           portfolioAssets: portAssets.length,
           portfolioValue: portValue,
         });
+        setGptMetrics(metrics);
       } catch (err) {
         console.error("Failed to load admin stats:", err);
       } finally {
@@ -189,6 +193,37 @@ export default function AdminPage() {
       setStatusMessage({ text: err.message || "Cache flush failed.", type: "error" });
     } finally {
       setFlushLoading(false);
+    }
+  };
+
+  const [migrationLoading, setMigrationLoading] = useState(false);
+
+  // Encryption migration handler
+  const runEncryptionMigration = async () => {
+    if (!user) return;
+    setMigrationLoading(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch("/api/admin/migrate-encryption", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.idToken}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStatusMessage({
+          text: `Firestore Encryption Migration complete! Encrypted and updated ${data.migratedCount} records.`,
+          type: "success",
+        });
+      } else {
+        throw new Error(data.error || "Failed to run migration");
+      }
+    } catch (err: any) {
+      setStatusMessage({ text: err.message || "Migration failed.", type: "error" });
+    } finally {
+      setMigrationLoading(false);
     }
   };
 
@@ -303,6 +338,56 @@ export default function AdminPage() {
           ))}
         </div>
 
+        {/* Custom GPT Analytics Panel */}
+        <div className="rounded-card border border-border-subtle bg-white p-6 shadow-subtle flex flex-col gap-4">
+          <h3 className="font-serif text-base font-bold text-text-primary flex items-center gap-2 border-b border-border-subtle pb-2">
+            🤖 Custom GPT Integration Analytics
+          </h3>
+          <div className="grid grid-cols-[1.5fr_1fr] gap-6 max-md:grid-cols-1">
+            {/* Left side: Users list */}
+            <div>
+              <h4 className="text-[12.5px] font-bold text-text-primary mb-2">Connected GPT Users ({gptMetrics?.activeUsersCount || 0})</h4>
+              {gptMetrics?.users && gptMetrics.users.length > 0 ? (
+                <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-1">
+                  {gptMetrics.users.map((gptUser: any) => (
+                    <div key={gptUser.email} className="flex justify-between items-center rounded border border-border-subtle bg-bg-primary/20 p-2.5">
+                      <div className="text-[12px] font-medium text-text-primary truncate max-w-[200px]">{gptUser.email}</div>
+                      <div className="text-[10px] text-text-secondary">
+                        Last Active: {gptUser.lastActive ? new Date(gptUser.lastActive).toLocaleDateString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "Never"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-text-secondary italic">No users have authorized Custom GPT actions yet.</p>
+              )}
+            </div>
+
+            {/* Right side: Summary & 7-Day Usage */}
+            <div className="flex flex-col gap-4 border-l border-border-subtle pl-6 max-md:border-l-0 max-md:pl-0">
+              <div>
+                <div className="text-[10px] font-bold font-mono tracking-wider text-text-secondary uppercase">TOTAL API CALLS</div>
+                <div className="text-2xl font-bold mt-1">{gptMetrics?.totalCalls || 0}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold font-mono tracking-wider text-text-secondary uppercase mb-2">7-DAY VOLUME</div>
+                {gptMetrics?.dailyUsage ? (
+                  <div className="flex flex-col gap-1.5 font-mono text-[10.5px]">
+                    {gptMetrics.dailyUsage.map((day: any) => (
+                      <div key={day.date} className="flex justify-between border-b border-bg-primary pb-1">
+                        <span>{day.date}</span>
+                        <span className="font-bold">{day.calls} call{day.calls === 1 ? "" : "s"}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-secondary italic">No usage recorded.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-[1.5fr_1fr] gap-6 max-md:grid-cols-1">
           
           {/* Left Column: Cron Alerts Operations */}
@@ -366,19 +451,29 @@ export default function AdminPage() {
             {/* Cache Controls Card */}
             <div className="rounded-card border border-border-subtle bg-white p-6 shadow-subtle flex flex-col gap-4">
               <h3 className="font-serif text-base font-bold text-text-primary flex items-center gap-2 border-b border-border-subtle pb-2">
-                <RefreshCw className="h-4.5 w-4.5" /> Cache Operations
+                <RefreshCw className="h-4.5 w-4.5" /> Database & Cache Operations
               </h3>
               <p className="text-xs text-text-secondary leading-relaxed">
-                Clearing the Redis database forces Next.js backend API routes to query Firestore directly on their next request, resetting cache states.
+                Management commands for database encryption and cache states.
               </p>
 
-              <button
-                disabled={flushLoading}
-                onClick={flushCache}
-                className="mt-2 w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-text-primary bg-text-primary text-xs font-semibold text-white py-3 transition-all hover:bg-[#2e2d27] disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" /> {flushLoading ? "Flushing Cache..." : "Flush Redis Cache"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  disabled={flushLoading}
+                  onClick={flushCache}
+                  className="w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-text-primary bg-text-primary text-xs font-semibold text-white py-3 transition-all hover:bg-[#2e2d27] disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" /> {flushLoading ? "Flushing Cache..." : "Flush Redis Cache"}
+                </button>
+
+                <button
+                  disabled={migrationLoading}
+                  onClick={runEncryptionMigration}
+                  className="w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-border-subtle bg-transparent text-xs font-semibold text-text-primary py-3 transition-all hover:bg-bg-primary disabled:opacity-50"
+                >
+                  <Shield className="h-4.5 w-4.5" /> {migrationLoading ? "Encrypting Records..." : "Encrypt Existing Expenses"}
+                </button>
+              </div>
             </div>
 
             {/* Quick Server Info Card */}

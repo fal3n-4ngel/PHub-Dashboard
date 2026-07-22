@@ -53,7 +53,18 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
           </svg>
           <span className="text-base font-bold tracking-[-0.3px]">PHub Dashboard</span>
         </div>
-        <div>
+        <div className="flex items-center gap-3">
+          <a
+            href="/assistant"
+            title="AI Integration Setup"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle bg-bg-primary text-text-secondary transition-colors hover:text-text-primary"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+              <path d="M19 11v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="18" x2="12" y2="22"/>
+            </svg>
+          </a>
           {user && (
             <img
               src={user.photoURL || undefined}
