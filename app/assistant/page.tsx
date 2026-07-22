@@ -240,7 +240,7 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
               </div>
 
               {/* Option B: API Token (Manual fallback) */}
-              <div className="border border-border-subtle rounded-lg p-4 bg-bg-primary/20">
+              <div className="border border-border-subtle rounded-lg p-4 bg-bg-primary/20 min-h-[82px] flex flex-col justify-center">
                 <h3 className="font-serif text-[13px] font-bold text-text-primary mb-1">Option B: Permanent API Key (Manual copy-paste)</h3>
                 <p className="text-[11.5px] text-text-secondary leading-relaxed mb-3">
                   Under Authentication, select <strong>API Key</strong> ➔ <strong>Bearer</strong>, and paste your key.

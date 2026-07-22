@@ -121,7 +121,7 @@ export function GeminiChatBubble({ idToken }: GeminiChatBubbleProps) {
       {/* Floating Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-text-primary text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 z-[9999] cursor-pointer"
+        className="fixed max-md:bottom-[76px] bottom-6 right-6 h-12 w-12 rounded-full bg-text-primary text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 z-[9999] cursor-pointer"
         aria-label="Toggle AI Assistant"
       >
         {isOpen ? <X className="h-5.5 w-5.5" /> : <MessageSquare className="h-5.5 w-5.5" />}
@@ -129,7 +129,7 @@ export function GeminiChatBubble({ idToken }: GeminiChatBubbleProps) {
 
       {/* Chat Overlay Panel */}
       {isOpen && (
-        <div className="fixed bottom-20 right-6 w-96 max-md:w-[calc(100vw-32px)] h-[480px] bg-white border border-border-subtle rounded-card shadow-lg flex flex-col overflow-hidden z-[9999] animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed max-md:bottom-[136px] bottom-20 right-6 w-96 max-md:w-[calc(100vw-32px)] h-[480px] bg-white border border-border-subtle rounded-card shadow-lg flex flex-col overflow-hidden z-[9999] animate-in fade-in slide-in-from-bottom-4 duration-200">
           
           {/* Header */}
           <div className="bg-[#fcfbfa] border-b border-border-subtle px-4.5 py-3 flex items-center justify-between">
