@@ -8,7 +8,7 @@ const TRAKT_API = "https://api.trakt.tv";
 
 // Only the Trakt endpoints the dashboard actually uses may be relayed.
 const ALLOWED_METHODS = new Set(["GET", "POST", "DELETE"]);
-const ALLOWED_PATH_PREFIXES = ["/users/settings", "/sync/", "/search/", "/shows/", "/movies/"];
+const ALLOWED_PATH_PREFIXES = ["/users/", "/sync/", "/search/", "/shows/", "/movies/"];
 
 // Resolves and validates the target URL. Prevents SSRF: a path like
 // "@evil.com/x" or "//evil.com/x" would otherwise change the request host.
@@ -45,14 +45,14 @@ export async function POST(req: NextRequest) {
       throw new ApiError(500, "Trakt client ID is not configured.");
     }
 
-    let body: any;
+    let body: unknown;
     try {
       body = await req.json();
     } catch {
       throw new ApiError(400, "Invalid JSON body");
     }
 
-    const { path, method, token, body: forwardBody } = body || {};
+    const { path, method, token, body: forwardBody } = (body || {}) as Record<string, unknown>;
     const url = resolveTraktUrl(path);
 
     const upstreamMethod = typeof method === "string" ? method.toUpperCase() : "GET";

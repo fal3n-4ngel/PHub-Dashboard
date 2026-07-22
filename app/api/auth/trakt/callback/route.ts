@@ -4,9 +4,10 @@ import { getCredentials } from "@/lib/credentials";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const origin = req.nextUrl.origin;
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host;
+  const proto = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "") || "http";
+  const origin = `${proto}://${host}`;
   const code = req.nextUrl.searchParams.get("code");
-  const redirectUri = `${origin}/api/auth/trakt/callback`;
 
   if (!code) {
     return NextResponse.redirect(`${origin}/?trakt_error=${encodeURIComponent("Missing authorization code")}`);
@@ -18,12 +19,12 @@ export async function GET(req: NextRequest) {
       throw new Error("Trakt client credentials are not configured on the server.");
     }
 
+    const redirectUri = creds.redirectUri || `${origin}/api/auth/trakt/callback`;
+
     const res = await fetch("https://api.trakt.tv/oauth/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Trakt is behind Cloudflare, which blocks server-side fetches with no
-        // User-Agent as bot traffic — a browser-like UA avoids the 403 block page.
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       },
       body: JSON.stringify({
@@ -36,10 +37,9 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) {
-      // Log upstream details server-side only; don't leak them into the redirect URL.
       const errText = await res.text().catch(() => "");
       console.error(`Trakt token exchange failed (${res.status}):`, errText.slice(0, 500));
-      throw new Error(`Trakt token exchange failed (${res.status}).`);
+      throw new Error(`Trakt token exchange failed (${res.status}): ${errText.slice(0, 200)}`);
     }
 
     const tokens = await res.json();
@@ -49,7 +49,8 @@ export async function GET(req: NextRequest) {
       `&trakt_expires_in=${tokens.expires_in}`;
 
     return NextResponse.redirect(`${origin}/#${hash}`);
-  } catch (error: any) {
-    return NextResponse.redirect(`${origin}/?trakt_error=${encodeURIComponent(error.message)}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Trakt sign-in failed.";
+    return NextResponse.redirect(`${origin}/?trakt_error=${encodeURIComponent(message)}`);
   }
 }

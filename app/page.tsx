@@ -1,271 +1,186 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  FirebaseUser,
+  AniListUser,
+  TraktUser,
+  Expense,
+  WatchlistItem,
+  Subscription,
+  InvestmentAsset,
+  InvestmentCategory,
+  SearchResult,
+  InvestmentQuote,
+} from "@/types";
+import { getNextFutureBillingDate, getSalaryCycleRange } from "@/lib/dates";
+import { anilistQuery } from "@/lib/anilist";
+import { traktRequest } from "@/lib/trakt-client";
+import type { SyncEntry } from "@/lib/firebase";
 
-/* ─── Types ─── */
-interface FirebaseUser {
-  uid: string;
-  email: string;
-  displayName: string | null;
-  photoURL: string | null;
-  idToken: string;
+// Modular Dashboard Components
+import LandingPage from "@/components/landing/LandingPage";
+import { Sidebar } from "@/components/dashboard/Sidebar";
+import { MobileHeader } from "@/components/dashboard/MobileHeader";
+import { ConfirmModal, ConfirmState } from "@/components/dashboard/ConfirmModal";
+import { OnboardingModal } from "@/components/dashboard/OnboardingModal";
+import { ExpensesTab } from "@/components/dashboard/ExpensesTab";
+import { SubscriptionsTab } from "@/components/dashboard/SubscriptionsTab";
+import { WatchlistTab } from "@/components/dashboard/WatchlistTab";
+import { BooksTab } from "@/components/dashboard/BooksTab";
+import { NotesTab } from "@/components/dashboard/NotesTab";
+import { InvestmentsTab } from "@/components/dashboard/InvestmentsTab";
+
+interface FirebaseAuthModule {
+  auth: any;
+  GoogleAuthProvider: any;
+  signInWithPopup: any;
+  signInWithRedirect: any;
+  signOut: any;
 }
 
-interface AniListUser {
-  id: number;
-  name: string;
-  avatar: string | null;
-  token: string;
-}
-
-interface TraktUser {
-  username: string;
-  name: string | null;
-  avatar: string | null;
-  accessToken: string;
-  refreshToken: string;
-}
-
-interface Expense {
-  id: string;
-  title: string;
-  amount: number | null;
-  category: string | null;
-  date: string | null;
-  notes: string | null;
-}
-
-interface WatchlistItem {
-  id: string;
-  title: string;
-  type: "movie" | "show" | "anime";
-  status: "plan_to_watch" | "watching" | "completed" | "dropped";
-  progress: number;
-  totalEpisodes: number | null;
-  rating: number | null;
-  coverImage: string | null;
-  year: number | null;
-  updatedAt: number;
-  anilistId?: number | null; // store AniList media ID for sync
-  traktId?: number | null; // store Trakt media ID for sync
-}
-
-interface SearchResult {
-  title: string;
-  type: "movie" | "show" | "anime";
-  totalEpisodes: number | null;
-  coverImage: string | null;
-  year: number | null;
-  anilistId?: number | null;
-  traktId?: number | null;
-}
-
-/* ─── AniList GraphQL helper ─── */
-const ANILIST_GQL = "https://graphql.anilist.co";
-
-async function anilistQuery(query: string, variables: Record<string, any> = {}, token?: string) {
-  const res = await fetch(ANILIST_GQL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) throw new Error(`AniList error: ${res.status}`);
-  return res.json();
-}
-
-const STATUS_MAP: Record<string, WatchlistItem["status"]> = {
-  CURRENT:   "watching",
-  PLANNING:  "plan_to_watch",
-  COMPLETED: "completed",
-  DROPPED:   "dropped",
-  PAUSED:    "watching",
-  REPEATING: "watching",
-};
-
-const ANILIST_STATUS_MAP: Record<string, string> = {
-  watching:      "CURRENT",
-  plan_to_watch: "PLANNING",
-  completed:     "COMPLETED",
-  dropped:       "DROPPED",
-};
-
-/* ─── Trakt API helper ───
- * Trakt's API sends no CORS headers, so the browser can't call api.trakt.tv
- * directly (fails with "Failed to fetch"). Requests go through our own
- * /api/trakt/proxy route instead, which relays them server-to-server. */
-const TRAKT_CLIENT_ID = process.env.NEXT_PUBLIC_TRAKT_CLIENT_ID || "";
-
-async function traktRequest(idToken: string | undefined, path: string, opts: { method?: string; token?: string; body?: any } = {}) {
-  const res = await fetch("/api/trakt/proxy", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken || ""}`,
-    },
-    body: JSON.stringify({ path, method: opts.method, token: opts.token, body: opts.body }),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Trakt error (${res.status}): ${errText}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-}
-
-/* ─── Component ─── */
 export default function Dashboard() {
-  /* ─── Auth State ─── */
+  /* ─── State ─── */
+  const [activeTab, setActiveTab] = useState<string>("expenses");
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState("");
-  const [firebaseAuth, setFirebaseAuth] = useState<any>(null);
+  const [firebaseAuth, setFirebaseAuth] = useState<FirebaseAuthModule | null>(null);
 
-  /* ─── AniList State ─── */
+  // Integrations
   const [anilistUser, setAnilistUser] = useState<AniListUser | null>(null);
-  const [isSyncingAnilist, setIsSyncingAnilist] = useState(false);
-  const [anilistSyncMsg, setAnilistSyncMsg] = useState("");
-
-  /* ─── Trakt State ─── */
   const [traktUser, setTraktUser] = useState<TraktUser | null>(null);
-  const [isSyncingTrakt, setIsSyncingTrakt] = useState(false);
-  const [traktSyncMsg, setTraktSyncMsg] = useState("");
 
-  /* ─── Navigation ─── */
-  const [activeTab, setActiveTab] = useState<"expenses" | "media">("expenses");
+  // Currency & Navigation
+  const [currency, setCurrency] = useState<string>("₹");
+  const [expenseTab, setExpenseTab] = useState<"ledger" | "subscriptions">("ledger");
 
-  /* ─── Filters ─── */
-  const [timeFilter, setTimeFilter] = useState("all");
-
-  /* ─── Expenses State ─── */
+  // Expenses State
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [isFetchingExpenses, setIsFetchingExpenses] = useState(false);
+  const [expensesLoaded, setExpensesLoaded] = useState(false);
   const [expenseTitle, setExpenseTitle] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [expenseDate, setExpenseDate] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
-  const [expenseSearch, setExpenseSearch] = useState("");
   const [isAddingExpense, setIsAddingExpense] = useState(false);
-  const [isFetchingExpenses, setIsFetchingExpenses] = useState(false);
 
-  /* ─── Watchlist State ─── */
+  // Filters & Analytics
+  const [timeFilter, setTimeFilter] = useState<"7" | "30" | "90" | "salary" | "all">("all");
+  const [salaryDay, setSalaryDay] = useState<number>(1);
+  const [activeChart, setActiveChart] = useState<"category" | "trend">("category");
+  const [expenseSearch, setExpenseSearch] = useState("");
+  const [ledgerCategoryFilter, setLedgerCategoryFilter] = useState("");
+  const [ledgerMinAmount, setLedgerMinAmount] = useState("");
+  const [ledgerMaxAmount, setLedgerMaxAmount] = useState("");
+
+  // Subscriptions State
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [isFetchingSubscriptions, setIsFetchingSubscriptions] = useState(false);
+  const [subName, setSubName] = useState("");
+  const [subIcon, setSubIcon] = useState("");
+  const [subCost, setSubCost] = useState("");
+  const [subCycle, setSubCycle] = useState<"monthly" | "yearly">("monthly");
+  const [subNextDate, setSubNextDate] = useState("");
+  const [isAddingSub, setIsAddingSub] = useState(false);
+
+  // Watchlist State
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [isFetchingWatchlist, setIsFetchingWatchlist] = useState(false);
   const [mediaQuery, setMediaQuery] = useState("");
-  const [mediaType, setMediaType] = useState<"anime" | "movie" | "show">("anime");
+  const [mediaType, setMediaType] = useState<"movie" | "show" | "anime" | "book">("movie");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchingMedia, setIsSearchingMedia] = useState(false);
   const [watchlistFilter, setWatchlistFilter] = useState<"all" | "anime" | "movie" | "show">("all");
-  const [watchlistTab, setWatchlistTab] = useState<"watching" | "plan" | "completed">("watching");
-  const [mediaCategory, setMediaCategory] = useState<"general" | "anime">("general");
 
-  /* ─── Bootstrap Firebase Auth ─── */
-  useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+  // Letterboxd CSV Import Modal
+  const [showLetterboxdModal, setShowLetterboxdModal] = useState(false);
+  const [letterboxdCsv, setLetterboxdCsv] = useState("");
+  const [isImportingLetterboxd, setIsImportingLetterboxd] = useState(false);
 
-    (async () => {
-      try {
-        const res = await fetch("/api/auth/config");
-        if (!res.ok) throw new Error("Could not load Firebase configuration.");
-        const config = await res.json();
+  // Book Library State
+  const [bookQuery, setBookQuery] = useState("");
+  const [isSearchingBooks, setIsSearchingBooks] = useState(false);
+  const [bookResults, setBookResults] = useState<SearchResult[]>([]);
+  const [bookFilter, setBookFilter] = useState<"all" | "reading" | "to_read" | "completed">("reading");
 
-        const { initializeApp, getApps } = await import("firebase/app");
-        const { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } = await import("firebase/auth");
+  // Notes State
+  const [noteContent, setNoteContent] = useState("");
+  const [isFetchingNote, setIsFetchingNote] = useState(false);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const saveNoteTimeout = useRef<NodeJS.Timeout | null>(null);
 
-        const appName = "dashboard-client";
-        const apps = getApps();
-        const existingApp = apps.find((a) => a.name === appName);
-        const app = existingApp || initializeApp(config, appName);
-        const auth = getAuth(app);
+  // Investments State
+  const [investments, setInvestments] = useState<InvestmentAsset[]>([]);
+  const [isFetchingInvestments, setIsFetchingInvestments] = useState(false);
+  const [invName, setInvName] = useState("");
+  const [invCategory, setInvCategory] = useState<InvestmentCategory>("equity");
+  const [invAmount, setInvAmount] = useState("");
+  const [invQuantity, setInvQuantity] = useState("");
+  const [invBuyPrice, setInvBuyPrice] = useState("");
+  const [invNotes, setInvNotes] = useState("");
+  const [isAddingAsset, setIsAddingAsset] = useState(false);
+  const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
+  const [invSuggestions, setInvSuggestions] = useState<InvestmentQuote[]>([]);
+  const [showInvestmentsTab, setShowInvestmentsTab] = useState(true);
 
-        setFirebaseAuth({ auth, GoogleAuthProvider, signInWithPopup, signOut });
-
-        unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-          if (fbUser) {
-            const idToken = await fbUser.getIdToken();
-            setUser({ uid: fbUser.uid, email: fbUser.email || "", displayName: fbUser.displayName, photoURL: fbUser.photoURL, idToken });
-          } else {
-            setUser(null);
-          }
-          setAuthLoading(false);
-        });
-      } catch (err: any) {
-        setAuthError(err.message);
-        setAuthLoading(false);
-      }
-    })();
-
-    return () => { if (unsubscribe) unsubscribe(); };
-  }, []);
-
-  /* ─── AniList / Trakt: Handle OAuth redirect tokens in URL hash ───
-   * Trakt's loadTraktUser call goes through our own /api/trakt/proxy, which requires
-   * the Firebase idToken — so it can't fire here on mount (Firebase auth may not have
-   * resolved yet). Tokens are just persisted to localStorage here; the "load saved
-   * tokens" effect below (keyed on `user`) does the actual Trakt profile fetch once
-   * auth is ready. AniList's client-only API has no such requirement. */
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash) return;
-
-    const params = new URLSearchParams(hash.substring(1));
-    const anilistToken = params.get("access_token");
-    const traktAccessToken = params.get("trakt_access_token");
-    const traktRefreshToken = params.get("trakt_refresh_token");
-    if (!anilistToken && !traktAccessToken) return;
-
-    // Clean the hash from the URL
-    window.history.replaceState(null, "", window.location.pathname);
-
-    if (anilistToken) {
-      localStorage.setItem("anilist_token", anilistToken);
-      loadAnilistUser(anilistToken);
-    }
-    if (traktAccessToken && traktRefreshToken) {
-      localStorage.setItem("trakt_access_token", traktAccessToken);
-      localStorage.setItem("trakt_refresh_token", traktRefreshToken);
-    }
-  }, []);
-
-  /* ─── AniList: Load saved token on mount ─── */
-  useEffect(() => {
-    const savedToken = localStorage.getItem("anilist_token");
-    if (savedToken) loadAnilistUser(savedToken);
-  }, []);
-
-  /* ─── Trakt: Load saved tokens once Firebase auth is ready ─── */
-  useEffect(() => {
-    if (!user) return;
-    const savedAccessToken = localStorage.getItem("trakt_access_token");
-    const savedRefreshToken = localStorage.getItem("trakt_refresh_token");
-    if (savedAccessToken && savedRefreshToken) loadTraktUser(savedAccessToken, savedRefreshToken, user.idToken);
-  }, [user]);
-
-  /* ─── Token refresh for Firebase ─── */
-  useEffect(() => {
-    if (!firebaseAuth || !user) return;
-    const interval = setInterval(async () => {
-      try {
-        const newToken = await firebaseAuth.auth.currentUser?.getIdToken(true);
-        if (newToken) setUser((prev) => prev ? { ...prev, idToken: newToken } : null);
-      } catch {}
-    }, 50 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [firebaseAuth, user]);
-
-  /* ─── Fetch data once when user logs in (expenseSearch is filtered client-side, not refetched) ─── */
-  useEffect(() => {
-    if (user) { fetchExpenses(); fetchWatchlist(); }
-  }, [user]);
+  // Onboarding & Confirm Dialogs
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [confirmDlg, setConfirmDlg] = useState<ConfirmState>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
 
   const getHeaders = useCallback(() => ({
     "Content-Type": "application/json",
     "Authorization": `Bearer ${user?.idToken || ""}`,
   }), [user]);
 
-  /* ─── AniList helpers ─── */
+  const triggerConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDestructive = true,
+    confirmText = "Delete",
+    cancelText = "Cancel"
+  ) => {
+    setConfirmDlg({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDlg((prev) => ({ ...prev, isOpen: false }));
+      },
+      confirmText,
+      cancelText,
+      isDestructive,
+      variant: "confirm",
+    });
+  };
+
+  const triggerAlert = (
+    title: string,
+    message: string,
+    tone: "danger" | "success" | "info" = "info",
+    confirmText = "OK"
+  ) => {
+    setConfirmDlg({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => setConfirmDlg((prev) => ({ ...prev, isOpen: false })),
+      confirmText,
+      variant: "alert",
+      tone,
+    });
+  };
+
+  /* ─── AniList / Trakt Auth ─── */
   async function loadAnilistUser(token: string) {
     try {
       const data = await anilistQuery(`query { Viewer { id name avatar { large } } }`, {}, token);
@@ -273,14 +188,13 @@ export default function Dashboard() {
       if (viewer) {
         setAnilistUser({ id: viewer.id, name: viewer.name, avatar: viewer.avatar?.large || null, token });
       }
-    } catch (err) {
-      console.error("AniList viewer load failed:", err);
+    } catch {
       localStorage.removeItem("anilist_token");
     }
   }
 
   function connectAnilist() {
-    const clientId = process.env.NEXT_PUBLIC_ANILIST_CLIENT_ID;
+    const clientId = process.env.NEXT_PUBLIC_ANILIST_CLIENT_ID || "46468";
     window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&response_type=token`;
   }
 
@@ -289,33 +203,55 @@ export default function Dashboard() {
     setAnilistUser(null);
   }
 
-  // Shared by AniList/Trakt sync: one Firestore read + batched, diffed writes
-  // instead of one request per title, to stay within the Spark plan's shared daily quota.
-  async function syncEntriesToWatchlist(source: "anilist" | "trakt", entries: any[]) {
-    const res = await fetch("/api/watchlist/sync", {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ source, entries }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message || `Sync failed: ${res.status}`);
+  async function loadTraktUser(accessToken: string, refreshToken: string, idToken: string | undefined) {
+    try {
+      const profile = await traktRequest(idToken, "users/me", { token: accessToken });
+      if (profile?.username) {
+        setTraktUser({
+          username: profile.username,
+          name: profile.name || profile.username,
+          avatar: profile.images?.avatar?.full || null,
+          accessToken,
+          refreshToken,
+        });
+      }
+    } catch {
+      disconnectTrakt();
     }
-    return res.json() as Promise<{ added: number; updated: number; skipped: number }>;
   }
 
-  async function syncAnilistLibrary() {
-    if (!anilistUser || !user) return;
-    setIsSyncingAnilist(true);
-    setAnilistSyncMsg("Fetching your AniList library...");
+  function connectTrakt() {
+    const clientId = process.env.NEXT_PUBLIC_TRAKT_CLIENT_ID || "L_cE2O_7uJ7nkzU_UDkivqetsef0OLyvpOH6o6b4Y_0";
+    const redirectUri = encodeURIComponent(window.location.origin + "/api/auth/trakt/callback");
+    window.location.href = `https://trakt.tv/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}`;
+  }
 
+  function disconnectTrakt() {
+    localStorage.removeItem("trakt_access_token");
+    localStorage.removeItem("trakt_refresh_token");
+    setTraktUser(null);
+  }
+
+  /* ─── AniList & Trakt Library Sync ─── */
+  const [isSyncingAnilist, setIsSyncingAnilist] = useState(false);
+  const [isSyncingTrakt, setIsSyncingTrakt] = useState(false);
+
+  const syncAnilist = async () => {
+    if (!anilistUser?.token) {
+      connectAnilist();
+      return;
+    }
+    setIsSyncingAnilist(true);
     try {
-      const data = await anilistQuery(`
+      const viewerData = await anilistQuery(`query { Viewer { id } }`, {}, anilistUser.token);
+      const userId = viewerData?.data?.Viewer?.id;
+      if (!userId) throw new Error("Could not fetch AniList profile.");
+
+      const query = `
         query ($userId: Int) {
           MediaListCollection(userId: $userId, type: ANIME) {
             lists {
               entries {
-                id
                 status
                 progress
                 score(format: POINT_10)
@@ -330,292 +266,435 @@ export default function Dashboard() {
             }
           }
         }
-      `, { userId: anilistUser.id }, anilistUser.token);
+      `;
+      const data = await anilistQuery(query, { userId }, anilistUser.token);
+      const lists = data?.data?.MediaListCollection?.lists || [];
+      const entries: SyncEntry[] = [];
 
-      const lists = data.data?.MediaListCollection?.lists || [];
-      const allEntries: any[] = [];
-      lists.forEach((list: any) => allEntries.push(...(list.entries || [])));
+      for (const list of lists) {
+        for (const entry of list.entries || []) {
+          const media = entry.media;
+          if (!media) continue;
 
-      const normalized = allEntries.map((entry) => {
-        const media = entry.media;
-        return {
-          title: media.title?.english || media.title?.romaji || "Unknown",
-          type: "anime" as const,
-          status: STATUS_MAP[entry.status] || "plan_to_watch",
-          progress: entry.progress || 0,
-          totalEpisodes: media.episodes || null,
-          rating: entry.score || null,
-          coverImage: media.coverImage?.large || null,
-          year: media.startDate?.year || null,
-          anilistId: media.id,
-        };
-      });
+          let status: WatchlistItem["status"] = "plan_to_watch";
+          if (entry.status === "CURRENT") status = "watching";
+          else if (entry.status === "COMPLETED") status = "completed";
+          else if (entry.status === "DROPPED") status = "dropped";
+          else if (entry.status === "PAUSED") status = "watching";
 
-      setAnilistSyncMsg(`Syncing ${normalized.length} entries to Firestore...`);
-      const result = await syncEntriesToWatchlist("anilist", normalized);
+          const title = media.title?.english || media.title?.romaji || "Untitled Anime";
+          entries.push({
+            title,
+            type: "anime",
+            status,
+            progress: entry.progress || 0,
+            totalEpisodes: media.episodes || null,
+            rating: entry.score ? Number(entry.score) : null,
+            coverImage: media.coverImage?.large || null,
+            year: media.startDate?.year || null,
+            anilistId: media.id,
+          });
+        }
+      }
 
-      setAnilistSyncMsg(`✅ Sync complete — ${result.added} added, ${result.updated} updated, ${result.skipped} unchanged`);
-      fetchWatchlist();
-      setTimeout(() => setAnilistSyncMsg(""), 4000);
+      if (entries.length > 0) {
+        const res = await fetch("/api/watchlist/sync", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ source: "anilist", entries }),
+        });
+        if (res.ok) {
+          const result = await res.json();
+          await fetchWatchlist();
+          triggerAlert("AniList Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated anime titles!`, "success");
+        } else {
+          throw new Error("Server rejected sync payload.");
+        }
+      } else {
+        triggerAlert("AniList Sync", "No anime items found in your AniList account.", "info");
+      }
     } catch (err: any) {
-      setAnilistSyncMsg(`❌ Sync failed: ${err.message}`);
-      setTimeout(() => setAnilistSyncMsg(""), 4000);
+      console.error(err);
+      triggerAlert("AniList Sync Error", err?.message || "Failed to sync with AniList.", "danger");
     } finally {
       setIsSyncingAnilist(false);
     }
-  }
+  };
 
-  /* ─── Trakt helpers ─── */
-  async function loadTraktUser(accessToken: string, refreshToken: string, idToken: string | undefined) {
-    try {
-      const settings = await traktRequest(idToken, "/users/settings", { token: accessToken });
-      const account = settings?.user;
-      if (account) {
-        setTraktUser({
-          username: account.username,
-          name: account.name || null,
-          avatar: account.images?.avatar?.full || null,
-          accessToken,
-          refreshToken,
-        });
-      }
-    } catch (err) {
-      console.error("Trakt profile load failed:", err);
-      localStorage.removeItem("trakt_access_token");
-      localStorage.removeItem("trakt_refresh_token");
+  const syncTrakt = async () => {
+    if (!traktUser?.accessToken) {
+      connectTrakt();
+      return;
     }
-  }
-
-  function connectTrakt() {
-    const redirectUri = `${window.location.origin}/api/auth/trakt/callback`;
-    window.location.href = `https://trakt.tv/oauth/authorize?response_type=code&client_id=${TRAKT_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  }
-
-  function disconnectTrakt() {
-    localStorage.removeItem("trakt_access_token");
-    localStorage.removeItem("trakt_refresh_token");
-    setTraktUser(null);
-  }
-
-  // Pulls Trakt's watchlist (plan-to-watch) and watched history (completed) for movies + shows.
-  async function syncTraktLibrary() {
-    if (!traktUser || !user) return;
     setIsSyncingTrakt(true);
-    setTraktSyncMsg("Fetching your Trakt library...");
-
     try {
-      const [watchlist, watchedShows, watchedMovies] = await Promise.all([
-        traktRequest(user.idToken, "/sync/watchlist?limit=1000", { token: traktUser.accessToken }),
-        traktRequest(user.idToken, "/sync/watched/shows?limit=1000&extended=progress", { token: traktUser.accessToken }),
-        traktRequest(user.idToken, "/sync/watched/movies?limit=1000", { token: traktUser.accessToken }),
-      ]);
+      const idToken = user?.idToken;
+      const movies = await traktRequest(idToken, "sync/watched/movies", { token: traktUser.accessToken });
+      const shows = await traktRequest(idToken, "sync/watched/shows", { token: traktUser.accessToken });
 
-      const byTraktId = new Map<number, any>();
+      const entries: SyncEntry[] = [];
 
-      (watchlist || []).forEach((entry: any) => {
-        const media = entry.movie || entry.show;
-        if (!media) return;
-        byTraktId.set(media.ids.trakt, {
-          title: media.title,
-          type: entry.movie ? "movie" : "show",
-          status: "plan_to_watch",
-          progress: 0,
-          totalEpisodes: entry.show?.aired_episodes || null,
-          rating: null,
-          coverImage: null,
-          year: media.year || null,
-          traktId: media.ids.trakt,
-        });
-      });
-
-      (watchedMovies || []).forEach((entry: any) => {
-        const media = entry.movie;
-        if (!media) return;
-        byTraktId.set(media.ids.trakt, {
-          title: media.title,
-          type: "movie",
-          status: "completed",
-          progress: 0,
-          totalEpisodes: null,
-          rating: null,
-          coverImage: null,
-          year: media.year || null,
-          traktId: media.ids.trakt,
-        });
-      });
-
-      (watchedShows || []).forEach((entry: any) => {
-        const media = entry.show;
-        if (!media) return;
-
-        let progress = 0;
-        if (entry.seasons) {
-          entry.seasons.forEach((season: any) => {
-            if (season.episodes) {
-              progress += season.episodes.length;
-            }
+      if (Array.isArray(movies)) {
+        for (const item of movies) {
+          if (!item?.movie) continue;
+          entries.push({
+            title: item.movie.title,
+            type: "movie",
+            status: "completed",
+            progress: 1,
+            totalEpisodes: 1,
+            rating: item.rating ? Number(item.rating) : null,
+            coverImage: null,
+            year: item.movie.year || null,
+            traktId: item.movie.ids?.trakt,
           });
         }
+      }
 
-        const totalEpisodes = media.aired_episodes || null;
-        // If progress is greater than or equal to totalEpisodes (and totalEpisodes is not null), it is completed, otherwise they are watching it.
-        const status = (totalEpisodes && progress >= totalEpisodes) ? "completed" : "watching";
+      if (Array.isArray(shows)) {
+        for (const item of shows) {
+          if (!item?.show) continue;
+          
+          let progress = 0;
+          if (Array.isArray(item.seasons)) {
+            for (const season of item.seasons) {
+              if (Array.isArray(season.episodes)) {
+                progress += season.episodes.length;
+              }
+            }
+          }
+          if (progress === 0 && item.plays) {
+            progress = item.plays;
+          }
 
-        byTraktId.set(media.ids.trakt, {
-          title: media.title,
-          type: "show",
-          status: status,
-          progress: progress,
-          totalEpisodes: totalEpisodes,
-          rating: null,
-          coverImage: null,
-          year: media.year || null,
-          traktId: media.ids.trakt,
+          const existing = watchlist.find(
+            (w) =>
+              (w.traktId && w.traktId === item.show.ids?.trakt) ||
+              (w.title.toLowerCase().trim() === item.show.title.toLowerCase().trim() && w.type === "show")
+          );
+
+          const totalEpisodes = existing?.totalEpisodes || null;
+          let status: WatchlistItem["status"] = "watching";
+          if (totalEpisodes && totalEpisodes > 0 && progress >= totalEpisodes) {
+            status = "completed";
+          }
+
+          entries.push({
+            title: item.show.title,
+            type: "show",
+            status,
+            progress,
+            totalEpisodes,
+            rating: item.rating ? Number(item.rating) : null,
+            coverImage: existing?.coverImage || null,
+            year: item.show.year || null,
+            traktId: item.show.ids?.trakt,
+          });
+        }
+      }
+
+      if (entries.length > 0) {
+        const res = await fetch("/api/watchlist/sync", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ source: "trakt", entries }),
         });
-      });
-
-      const normalized = Array.from(byTraktId.values());
-      setTraktSyncMsg(`Syncing ${normalized.length} entries to Firestore...`);
-      const result = await syncEntriesToWatchlist("trakt", normalized);
-
-      setTraktSyncMsg(`✅ Sync complete — ${result.added} added, ${result.updated} updated, ${result.skipped} unchanged`);
-      fetchWatchlist();
-      setTimeout(() => setTraktSyncMsg(""), 4000);
+        if (res.ok) {
+          const result = await res.json();
+          await fetchWatchlist();
+          triggerAlert("Trakt Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated movies & shows!`, "success");
+        } else {
+          throw new Error("Server rejected sync payload.");
+        }
+      } else {
+        triggerAlert("Trakt Sync", "No watched items found in your Trakt account.", "info");
+      }
     } catch (err: any) {
-      setTraktSyncMsg(`❌ Sync failed: ${err.message}`);
-      setTimeout(() => setTraktSyncMsg(""), 4000);
+      console.error(err);
+      triggerAlert("Trakt Sync Error", err?.message || "Failed to sync with Trakt.", "danger");
     } finally {
       setIsSyncingTrakt(false);
     }
-  }
+  };
 
-  // Push a status change back to Trakt: watchlist for plan_to_watch, history for completed.
-  async function pushToTrakt(item: WatchlistItem, updates: Partial<WatchlistItem>) {
-    if (!traktUser || !item.traktId || !user) return;
-    const mergedStatus = updates.status || item.status;
-    const idsBody = item.type === "movie"
-      ? { movies: [{ ids: { trakt: item.traktId } }] }
-      : { shows: [{ ids: { trakt: item.traktId } }] };
+  /* ─── Handle OAuth Tokens & Firebase Auth ─── */
+  useEffect(() => {
+    const hash = window.location.hash;
+    const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+    const anilistToken = params.get("access_token");
+    const traktAccessToken = params.get("trakt_access_token");
+    const traktRefreshToken = params.get("trakt_refresh_token");
 
-    try {
-      if (mergedStatus === "completed") {
-        await traktRequest(user.idToken, "/sync/history", { method: "POST", token: traktUser.accessToken, body: idsBody });
-      } else if (mergedStatus === "plan_to_watch") {
-        await traktRequest(user.idToken, "/sync/watchlist", { method: "POST", token: traktUser.accessToken, body: idsBody });
-      } else if (mergedStatus === "dropped") {
-        await traktRequest(user.idToken, "/sync/watchlist/remove", { method: "POST", token: traktUser.accessToken, body: idsBody });
-      }
-    } catch (err) {
-      console.error("Trakt push failed:", err);
+    if (anilistToken) {
+      localStorage.setItem("anilist_token", anilistToken);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
     }
-  }
+    if (traktAccessToken && traktRefreshToken) {
+      localStorage.setItem("trakt_access_token", traktAccessToken);
+      localStorage.setItem("trakt_refresh_token", traktRefreshToken);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
 
-  // Push a progress/status/score update back to AniList
-  async function pushToAnilist(item: WatchlistItem, updates: Partial<WatchlistItem>) {
-    if (!anilistUser || !item.anilistId) return;
-    try {
-      const mergedStatus = updates.status || item.status;
-      const mergedProgress = updates.progress !== undefined ? updates.progress : item.progress;
-      const mergedRating = updates.rating !== undefined ? updates.rating : item.rating;
+    // Init Firebase Auth
+    let unsubscribe: (() => void) | undefined;
+    import("firebase/app").then(async ({ initializeApp, getApps }) => {
+      const res = await fetch("/api/auth/config");
+      const config = await res.json();
+      const app = getApps().length ? getApps()[0] : initializeApp(config);
 
-      await anilistQuery(`
-        mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $score: Float) {
-          SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, score: $score) { id }
+      const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } = await import("firebase/auth");
+      const auth = getAuth(app);
+      setFirebaseAuth({ auth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut });
+
+      unsubscribe = auth.onAuthStateChanged(async (fbUser: any) => {
+        if (fbUser) {
+          const idToken = await fbUser.getIdToken();
+          setUser({
+            uid: fbUser.uid,
+            email: fbUser.email,
+            displayName: fbUser.displayName,
+            photoURL: fbUser.photoURL,
+            idToken,
+          });
+        } else {
+          setUser(null);
         }
-      `, {
-        mediaId: item.anilistId,
-        status: ANILIST_STATUS_MAP[mergedStatus] || "CURRENT",
-        progress: mergedProgress,
-        score: mergedRating ? Number(mergedRating) : 0,
-      }, anilistUser.token);
-    } catch (err) {
-      console.error("AniList push failed:", err);
-    }
-  }
+        setAuthLoading(false);
+      });
+    });
 
-  /* ─── Firebase Expenses API ───
-   * fetchExpenses is only called once per session (on login) plus after sync-style
-   * bulk operations; everyday adds/edits/deletes patch local state directly instead
-   * of re-querying, so a single add doesn't cost a full collection re-read. */
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  /* ─── Handle Integrations Profile Load ─── */
+  useEffect(() => {
+    if (!user) return;
+    const aniToken = localStorage.getItem("anilist_token");
+    if (aniToken) loadAnilistUser(aniToken);
+
+    const trAcc = localStorage.getItem("trakt_access_token");
+    const trRef = localStorage.getItem("trakt_refresh_token");
+    if (trAcc && trRef) loadTraktUser(trAcc, trRef, user.idToken);
+  }, [user]);
+
+  /* ─── API Fetchers ─── */
   const fetchExpenses = async () => {
     setIsFetchingExpenses(true);
     try {
       const res = await fetch("/api/expenses", { headers: getHeaders() });
       if (res.ok) setExpenses(await res.json());
-    } catch (err) { console.error(err); }
-    finally { setIsFetchingExpenses(false); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingExpenses(false);
+      setExpensesLoaded(true);
+    }
   };
 
-  const addExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!expenseTitle || !expenseAmount) return;
-    setIsAddingExpense(true);
-    try {
-      const payload = { title: expenseTitle, amount: Number(expenseAmount), category: expenseCategory || null, date: expenseDate || new Date().toISOString().slice(0, 10), notes: expenseNotes || null };
-      const res = await fetch("/api/expenses", {
-        method: "POST", headers: getHeaders(),
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const { id } = await res.json();
-        setExpenses((prev) => [{ id, ...payload, createdAt: Date.now() }, ...prev]);
-        setExpenseTitle(""); setExpenseAmount(""); setExpenseCategory(""); setExpenseDate(""); setExpenseNotes("");
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsAddingExpense(false); }
-  };
-
-  const archiveExpenseItem = async (id: string) => {
-    if (!confirm("Archive this expense?")) return;
-    const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", headers: getHeaders() });
-    if (res.ok) setExpenses((prev) => prev.filter((e) => e.id !== id));
-  };
-
-  /* ─── Watchlist API ─── */
   const fetchWatchlist = async () => {
     setIsFetchingWatchlist(true);
     try {
       const res = await fetch("/api/watchlist", { headers: getHeaders() });
-      if (res.ok) setWatchlist(await res.json());
-    } catch (err) { console.error(err); }
-    finally { setIsFetchingWatchlist(false); }
-  };
-
-  const addMediaToWatchlist = async (item: SearchResult) => {
-    const res = await fetch("/api/watchlist", {
-      method: "POST", headers: getHeaders(),
-      body: JSON.stringify({ ...item, status: "plan_to_watch", progress: 0 }),
-    });
-    if (res.ok) {
-      const { id } = await res.json();
-      setWatchlist((prev) => [{ id, status: "plan_to_watch", progress: 0, rating: null, updatedAt: Date.now(), ...item }, ...prev]);
-      setSearchResults([]); setMediaQuery("");
+      if (res.ok) {
+        const data = await res.json();
+        setWatchlist(Array.isArray(data) ? data : data.items || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingWatchlist(false);
     }
   };
 
+  const fetchSubscriptions = async () => {
+    setIsFetchingSubscriptions(true);
+    try {
+      const res = await fetch("/api/subscriptions", { headers: getHeaders() });
+      if (res.ok) {
+        const loaded = (await res.json()) as any[];
+        const rolled = loaded.map((sub) => {
+          const futureDate = getNextFutureBillingDate(sub.nextBillingDate, sub.billingCycle);
+          if (futureDate !== sub.nextBillingDate) {
+            fetch(`/api/subscriptions/${sub.id}`, {
+              method: "PATCH",
+              headers: getHeaders(),
+              body: JSON.stringify({ nextBillingDate: futureDate }),
+            }).catch((e) => console.error(e));
+            return { ...sub, nextBillingDate: futureDate };
+          }
+          return sub;
+        });
+        setSubscriptions(rolled);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingSubscriptions(false);
+    }
+  };
+
+  const fetchNote = async () => {
+    setIsFetchingNote(true);
+    try {
+      const res = await fetch("/api/notes", { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.content) setNoteContent(data.content);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingNote(false);
+    }
+  };
+
+  const fetchInvestments = async () => {
+    setIsFetchingInvestments(true);
+    try {
+      const res = await fetch("/api/portfolio", { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data && Array.isArray(data.assets) ? data.assets : []);
+        setInvestments(list);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingInvestments(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchExpenses();
+      fetchWatchlist();
+      fetchSubscriptions();
+      fetchNote();
+      fetchInvestments();
+    }
+  }, [user]);
+
+  /* ─── Onboarding Guide Check ─── */
+  useEffect(() => {
+    if (!user || !expensesLoaded) return;
+    if (localStorage.getItem("phub_onboarding_seen")) return;
+    localStorage.setItem("phub_onboarding_seen", "1");
+
+    const hasIntegration = !!localStorage.getItem("anilist_token") || !!localStorage.getItem("trakt_access_token");
+    if (expenses.length === 0 && !hasIntegration) {
+      setShowOnboarding(true);
+    }
+  }, [user, expensesLoaded, expenses.length]);
+
+  /* ─── Expense Actions ─── */
+  const addExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expenseTitle.trim() || !expenseAmount) return;
+    setIsAddingExpense(true);
+    try {
+      const res = await fetch("/api/expenses", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          title: expenseTitle.trim(),
+          amount: parseFloat(expenseAmount),
+          category: expenseCategory || null,
+          date: expenseDate || new Date().toISOString().slice(0, 10),
+          notes: expenseNotes.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setExpenseTitle("");
+        setExpenseAmount("");
+        setExpenseCategory("");
+        setExpenseNotes("");
+        fetchExpenses();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAddingExpense(false);
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    triggerConfirm("Archive Expense", "Are you sure you want to archive this expense?", async () => {
+      const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setExpenses((prev) => prev.filter((e) => e.id !== id));
+    });
+  };
+
+  /* ─── Subscription Actions ─── */
+  const addSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subName.trim() || !subCost || !subNextDate) return;
+    setIsAddingSub(true);
+    try {
+      const res = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          name: subName.trim(),
+          cost: parseFloat(subCost),
+          billingCycle: subCycle,
+          nextBillingDate: subNextDate,
+          icon: subIcon.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setSubName("");
+        setSubCost("");
+        setSubIcon("");
+        fetchSubscriptions();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAddingSub(false);
+    }
+  };
+
+  const deleteSubscription = async (id: string) => {
+    triggerConfirm("Delete Subscription", "Are you sure you want to delete this subscription?", async () => {
+      const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    });
+  };
+
+  /* ─── Watchlist Actions ─── */
   const updateWatchItem = async (item: WatchlistItem, updates: Partial<WatchlistItem>) => {
+    const nextUpdates = { ...updates };
+    if (nextUpdates.progress !== undefined) {
+      const total = nextUpdates.totalEpisodes !== undefined && nextUpdates.totalEpisodes !== null
+        ? Number(nextUpdates.totalEpisodes)
+        : (item.totalEpisodes !== undefined && item.totalEpisodes !== null ? Number(item.totalEpisodes) : null);
+      
+      if (total && total > 0 && Number(nextUpdates.progress) >= total) {
+        nextUpdates.status = "completed";
+      } else if (total && total > 0 && Number(nextUpdates.progress) < total && item.status === "completed" && nextUpdates.status === undefined) {
+        nextUpdates.status = "watching";
+      }
+    }
+
     const res = await fetch(`/api/watchlist/${item.id}`, {
-      method: "PATCH", headers: getHeaders(),
-      body: JSON.stringify(updates),
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(nextUpdates),
     });
     if (res.ok) {
-      setWatchlist((prev) => prev.map((w) => w.id === item.id ? { ...w, ...updates, updatedAt: Date.now() } : w));
-      // Sync status/progress back to the source the item came from
-      if (item.type === "anime" && item.anilistId) {
-        pushToAnilist(item, updates);
-      } else if ((item.type === "movie" || item.type === "show") && item.traktId) {
-        pushToTrakt(item, updates);
-      }
+      setWatchlist((prev) => prev.map((w) => (w.id === item.id ? { ...w, ...nextUpdates, updatedAt: Date.now() } : w)));
     }
   };
 
   const deleteWatchItem = async (id: string) => {
-    if (!confirm("Delete this watchlist item?")) return;
-    const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE", headers: getHeaders() });
-    if (res.ok) setWatchlist((prev) => prev.filter((w) => w.id !== id));
+    triggerConfirm("Delete Watchlist Item", "Are you sure you want to remove this item from your watchlist?", async () => {
+      const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE", headers: getHeaders() });
+      if (res.ok) setWatchlist((prev) => prev.filter((w) => w.id !== id));
+    });
   };
 
-  /* ─── Media Search ─── */
   const searchMedia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mediaQuery.trim()) return;
@@ -627,585 +706,638 @@ export default function Dashboard() {
           `query($s:String){Page(perPage:8){media(search:$s,type:ANIME){id title{english romaji}coverImage{large}startDate{year}episodes}}}`,
           { s: mediaQuery }
         );
-        setSearchResults((data.data?.Page?.media || []).map((m: any) => ({
-          title: m.title.english || m.title.romaji,
-          type: "anime" as const,
-          totalEpisodes: m.episodes || null,
-          coverImage: m.coverImage?.large || null,
-          year: m.startDate?.year || null,
-          anilistId: m.id,
-        })));
+        setSearchResults(
+          (data.data?.Page?.media || []).map((m: any) => ({
+            title: m.title.english || m.title.romaji,
+            type: "anime",
+            totalEpisodes: m.episodes || null,
+            coverImage: m.coverImage?.large || null,
+            year: m.startDate?.year || null,
+            anilistId: m.id,
+          }))
+        );
       } else {
-        // mediaType is "movie" or "show" — search Trakt by type for accurate results
-        const results = await traktRequest(user?.idToken, `/search/${mediaType}?query=${encodeURIComponent(mediaQuery)}&limit=8`);
-        setSearchResults((results || []).map((r: any) => {
-          const media = r.movie || r.show;
-          return {
-            title: media.title,
-            type: mediaType as "movie" | "show",
-            totalEpisodes: null,
-            coverImage: null,
-            year: media.year || null,
-            traktId: media.ids?.trakt || null,
-          };
-        }));
+        const data = await traktRequest(user?.idToken, `search/${mediaType}?query=${encodeURIComponent(mediaQuery)}&limit=8`);
+        if (Array.isArray(data)) {
+          setSearchResults(
+            data.map((item: any) => {
+              const m = item.movie || item.show;
+              return {
+                title: m.title,
+                type: item.type === "movie" ? "movie" : "show",
+                totalEpisodes: item.type === "show" ? m.aired_episodes || null : null,
+                coverImage: null,
+                year: m.year || null,
+                traktId: m.ids?.trakt || null,
+              };
+            })
+          );
+        }
       }
-    } catch (err) { console.error(err); }
-    finally { setIsSearchingMedia(false); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearchingMedia(false);
+    }
   };
 
-  /* ─── Derived data ───
-   * Search/time filtering happens client-side against the one cached fetch of
-   * expenses, instead of re-querying Firestore on every keystroke. */
-  const filteredExpenses = (() => {
+  const addToWatchlist = async (res: SearchResult) => {
+    const body: Omit<WatchlistItem, "id" | "updatedAt"> = {
+      title: res.title,
+      type: res.type,
+      status: "plan_to_watch",
+      progress: 0,
+      totalEpisodes: res.totalEpisodes || null,
+      rating: null,
+      coverImage: res.coverImage || null,
+      year: res.year || null,
+      anilistId: res.anilistId || null,
+      traktId: res.traktId || null,
+    };
+    const apiRes = await fetch("/api/watchlist", {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (apiRes.ok) fetchWatchlist();
+  };
+
+  const handleLetterboxdImport = async () => {
+    if (!letterboxdCsv.trim()) return;
+    setIsImportingLetterboxd(true);
+    try {
+      const lines = letterboxdCsv.trim().split("\n");
+      if (lines.length < 2) throw new Error("Invalid CSV format");
+
+      const headerLine = lines[0].toLowerCase();
+      const headers = headerLine.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map((s) => s.replace(/(^"|"$)/g, "")) || [];
+      const nameIdx = headers.findIndex((col) => col.includes("name"));
+      const yearIdx = headers.findIndex((col) => col.includes("year"));
+      if (nameIdx === -1) throw new Error("Could not find 'Name' column in CSV");
+
+      const newItems: Omit<WatchlistItem, "id">[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        let arr: string[] = [];
+        let quote = false;
+        let cell = "";
+        const str = lines[i];
+        for (let c = 0; c < str.length; c++) {
+          let char = str[c];
+          if (char === '"' && str[c + 1] === '"') {
+            cell += '"';
+            c++;
+          } else if (char === '"') {
+            quote = !quote;
+          } else if (char === "," && !quote) {
+            arr.push(cell.trim());
+            cell = "";
+          } else {
+            cell += char;
+          }
+        }
+        arr.push(cell.trim());
+
+        if (!arr[nameIdx]) continue;
+        const title = arr[nameIdx].replace(/(^"|"$)/g, "");
+        const year = yearIdx !== -1 && arr[yearIdx] ? parseInt(arr[yearIdx], 10) || null : null;
+
+        newItems.push({
+          title,
+          type: "movie",
+          status: "plan_to_watch",
+          progress: 0,
+          totalEpisodes: null,
+          rating: null,
+          coverImage: null,
+          year,
+          updatedAt: Date.now(),
+        });
+      }
+
+      if (newItems.length === 0) throw new Error("No valid movies found in CSV");
+
+      triggerConfirm("Import Movies", `Found ${newItems.length} movies. Import them into your watchlist?`, async () => {
+        const syncRes = await fetch("/api/watchlist/sync", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({ items: newItems }),
+        });
+        if (syncRes.ok) {
+          setShowLetterboxdModal(false);
+          setLetterboxdCsv("");
+          fetchWatchlist();
+        }
+      }, false, "Import");
+    } catch (err) {
+      triggerAlert("Import Failed", err instanceof Error ? err.message : "Failed to parse CSV", "danger");
+    } finally {
+      setIsImportingLetterboxd(false);
+    }
+  };
+
+  /* ─── Book Library Actions ─── */
+  const searchBooks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bookQuery.trim()) return;
+    setIsSearchingBooks(true);
+    setBookResults([]);
+    try {
+      const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(bookQuery)}&limit=8`);
+      if (res.ok) {
+        const data = await res.json();
+        setBookResults(
+          (data.docs || []).map((doc: any) => ({
+            title: doc.title,
+            type: "book",
+            totalEpisodes: doc.number_of_pages_median || null,
+            coverImage: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
+            year: doc.first_publish_year || null,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearchingBooks(false);
+    }
+  };
+
+  const addBook = async (b: SearchResult) => {
+    const body: Omit<WatchlistItem, "id" | "updatedAt"> = {
+      title: b.title,
+      type: "book",
+      status: "plan_to_watch",
+      progress: 0,
+      totalEpisodes: b.totalEpisodes || null,
+      rating: null,
+      coverImage: b.coverImage || null,
+      year: b.year || null,
+    };
+    const apiRes = await fetch("/api/watchlist", {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (apiRes.ok) fetchWatchlist();
+  };
+
+  /* ─── Notes Actions ─── */
+  const updateNote = (newContent: string) => {
+    setNoteContent(newContent);
+    setIsSavingNote(true);
+    if (saveNoteTimeout.current) clearTimeout(saveNoteTimeout.current);
+    saveNoteTimeout.current = setTimeout(async () => {
+      try {
+        await fetch("/api/notes", { method: "POST", headers: getHeaders(), body: JSON.stringify({ content: newContent }) });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSavingNote(false);
+      }
+    }, 1000);
+  };
+
+  /* ─── Investments Actions ─── */
+  useEffect(() => {
+    if (!invName.trim()) {
+      setInvSuggestions([]);
+      return;
+    }
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/portfolio/search?q=${encodeURIComponent(invName)}`, { headers: getHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          setInvSuggestions(data.quotes || []);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, 250);
+
+    return () => clearTimeout(delayDebounce);
+  }, [invName, user]);
+
+  const selectSuggestion = (s: InvestmentQuote) => {
+    setInvName(s.symbol || s.name || "");
+    if (s.type === "EQUITY") setInvCategory("equity");
+    else if (s.type === "CRYPTOCURRENCY") setInvCategory("crypto");
+    else if (s.type === "MUTUALFUND") setInvCategory("mutual_fund");
+    setInvSuggestions([]);
+  };
+
+  const addInvestment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invName.trim() || !invAmount) return;
+    setIsAddingAsset(true);
+    try {
+      const res = await fetch("/api/portfolio", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          name: invName.trim(),
+          category: invCategory,
+          amount: parseFloat(invAmount),
+          investedAmount: parseFloat(invAmount),
+          quantity: invQuantity ? parseFloat(invQuantity) : undefined,
+          buyPrice: invBuyPrice ? parseFloat(invBuyPrice) : undefined,
+          notes: invNotes.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        setInvName("");
+        setInvAmount("");
+        setInvQuantity("");
+        setInvBuyPrice("");
+        setInvNotes("");
+        fetchInvestments();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAddingAsset(false);
+    }
+  };
+
+  const deleteInvestment = async (id: string) => {
+    triggerConfirm("Delete Asset", "Are you sure you want to delete this asset from your portfolio?", async () => {
+      const updatedList = investments.filter((a) => a.id !== id);
+      setInvestments(updatedList);
+      await fetch(`/api/portfolio/${id}`, { method: "DELETE", headers: getHeaders() });
+    });
+  };
+
+  const updateMarketPrices = async () => {
+    setIsUpdatingPrices(true);
+    try {
+      const res = await fetch("/api/portfolio/prices", { headers: getHeaders() });
+      if (res.ok) fetchInvestments();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUpdatingPrices(false);
+    }
+  };
+
+  /* ─── Calculated Expense Analytics ─── */
+  const allCategories = useMemo(() => {
+    const defaultCats = ["Food", "Transport", "Entertainment", "Shopping", "Groceries", "Utilities", "Drinks", "Home", "Health", "Other"];
+    const loadedCats = new Set<string>();
+    expenses.forEach((e) => {
+      if (e.category) loadedCats.add(e.category);
+    });
+    customCategories.forEach((c) => loadedCats.add(c));
+    return Array.from(new Set([...defaultCats, ...Array.from(loadedCats)]));
+  }, [expenses, customCategories]);
+
+  const filteredExpenses = useMemo(() => {
     let list = expenses;
 
+    // Time filter
     if (timeFilter !== "all") {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - Number(timeFilter));
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-      list = list.filter((e) => e.date && e.date >= cutoffStr);
+      const now = new Date();
+      if (timeFilter === "salary") {
+        const { startStr, endStr } = getSalaryCycleRange(salaryDay);
+        list = list.filter((e) => e.date && e.date >= startStr && e.date <= endStr);
+      } else {
+        const days = parseInt(timeFilter, 10);
+        const cutoff = new Date(now.getTime() - days * 86400000).toISOString().slice(0, 10);
+        list = list.filter((e) => e.date && e.date >= cutoff);
+      }
     }
 
+    // Search filter
     if (expenseSearch.trim()) {
-      const qLower = expenseSearch.trim().toLowerCase();
-      list = list.filter((e) =>
-        e.title.toLowerCase().includes(qLower) ||
-        (e.notes && e.notes.toLowerCase().includes(qLower))
-      );
+      const q = expenseSearch.toLowerCase();
+      list = list.filter((e) => e.title.toLowerCase().includes(q) || (e.notes && e.notes.toLowerCase().includes(q)));
+    }
+
+    // Category filter
+    if (ledgerCategoryFilter) {
+      list = list.filter((e) => e.category === ledgerCategoryFilter);
+    }
+
+    // Amount range filter
+    if (ledgerMinAmount) {
+      const min = parseFloat(ledgerMinAmount);
+      if (!isNaN(min)) list = list.filter((e) => (e.amount || 0) >= min);
+    }
+    if (ledgerMaxAmount) {
+      const max = parseFloat(ledgerMaxAmount);
+      if (!isNaN(max)) list = list.filter((e) => (e.amount || 0) <= max);
     }
 
     return list;
-  })();
+  }, [expenses, timeFilter, salaryDay, expenseSearch, ledgerCategoryFilter, ledgerMinAmount, ledgerMaxAmount]);
 
-  const totalSpent = filteredExpenses.reduce((s, e) => s + (e.amount || 0), 0);
-  const largestCharge = filteredExpenses.length > 0 ? Math.max(...filteredExpenses.map((e) => e.amount || 0)) : 0;
-  const largestItem = filteredExpenses.find((e) => e.amount === largestCharge);
+  const totalSpent = useMemo(() => filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0), [filteredExpenses]);
 
-  const catBreakdown = filteredExpenses.reduce((acc, e) => {
-    const c = e.category || "Uncategorized";
-    acc[c] = (acc[c] || 0) + (e.amount || 0);
-    return acc;
-  }, {} as Record<string, number>);
+  const largestItem = useMemo(() => {
+    if (filteredExpenses.length === 0) return null;
+    return filteredExpenses.reduce((max, e) => ((e.amount || 0) > (max.amount || 0) ? e : max), filteredExpenses[0]);
+  }, [filteredExpenses]);
 
-  const topCategory = Object.keys(catBreakdown).length > 0
-    ? Object.entries(catBreakdown).sort((a, b) => b[1] - a[1])[0][0] : "None";
+  const largestCharge = largestItem?.amount || 0;
 
-  const watchingCount = watchlist.filter((i) => i.status === "watching").length;
-  const planCount     = watchlist.filter((i) => i.status === "plan_to_watch").length;
-  const completedCount = watchlist.filter((i) => i.status === "completed").length;
-  const lastCompleted = watchlist.filter((i) => i.status === "completed").sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const catBreakdown = useMemo(() => {
+    const breakdown: Record<string, number> = {};
+    filteredExpenses.forEach((e) => {
+      const cat = e.category || "Uncategorized";
+      breakdown[cat] = (breakdown[cat] || 0) + (e.amount || 0);
+    });
+    return Object.fromEntries(Object.entries(breakdown).sort(([, a], [, b]) => b - a));
+  }, [filteredExpenses]);
 
-  const filteredWatchlist = watchlist
-    .filter((i) => {
-      if (mediaCategory === "anime") {
-        return i.type === "anime";
-      } else {
-        if (i.type === "anime") return false;
-        return watchlistFilter === "all" || i.type === watchlistFilter;
-      }
-    })
-    .filter((i) => watchlistTab === "watching" ? i.status === "watching" : watchlistTab === "plan" ? i.status === "plan_to_watch" : i.status === "completed" || i.status === "dropped");
+  const topCategory = useMemo(() => Object.keys(catBreakdown)[0] || "None", [catBreakdown]);
 
-  const animeCount = watchlist.filter((i) => i.type === "anime").length;
-  const movieCount = watchlist.filter((i) => i.type === "movie").length;
-  const showCount  = watchlist.filter((i) => i.type === "show").length;
+  const dailyTrend = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredExpenses.forEach((e) => {
+      if (e.date) map[e.date] = (map[e.date] || 0) + (e.amount || 0);
+    });
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-10);
+  }, [filteredExpenses]);
 
-  /* ─── Loading / Login screens ─── */
+  /* ─── Sign In Screen ─── */
   if (authLoading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", backgroundColor: "var(--bg-primary)" }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ width: "28px", height: "28px", border: "2px solid var(--border-subtle)", borderTopColor: "var(--text-primary)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }}></div>
-          <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>Initialising...</p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div className="flex h-screen items-center justify-center bg-bg-primary">
+        <p className="text-sm text-text-muted">Loading PHub Dashboard…</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", backgroundColor: "var(--bg-primary)" }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div className="bento-card" style={{ width: "360px", textAlign: "center", padding: "48px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "21px", fontWeight: 700, letterSpacing: "-0.5px" }}>Personal Hub</span>
-          </div>
-          <div>
-            <h2 style={{ fontSize: "19px", fontWeight: 600, marginBottom: "6px" }}>Welcome back</h2>
-            <p style={{ color: "var(--text-secondary)", fontSize: "13px" }}>Sign in to access your dashboard</p>
-          </div>
-          {authError && <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", width: "100%", fontSize: "12px", color: "#dc2626" }}>{authError}</div>}
-          <button onClick={async () => { if (!firebaseAuth) return; try { await firebaseAuth.signInWithPopup(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider()); } catch(e: any) { setAuthError(e.message); } }}
-            disabled={!firebaseAuth}
-            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", backgroundColor: "var(--text-primary)", color: "#fff", padding: "13px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: 600, cursor: firebaseAuth ? "pointer" : "not-allowed", opacity: firebaseAuth ? 1 : 0.6 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Sign in with Google
-          </button>
-          <p style={{ color: "var(--text-muted)", fontSize: "11px" }}>Data is stored privately by your Google account.</p>
-        </div>
-      </div>
+      <LandingPage
+        onLogin={() => {
+          if (firebaseAuth) {
+            firebaseAuth.signInWithPopup(firebaseAuth.auth, new firebaseAuth.GoogleAuthProvider());
+          }
+        }}
+        firebaseAuthReady={!!firebaseAuth}
+      />
     );
   }
 
-  /* ─── Main Dashboard ─── */
+  /* ─── Main App Render ─── */
   return (
-    <div className="app-container">
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="flex min-h-screen max-md:flex-col max-md:overflow-x-hidden">
 
-      {/* ─── Sidebar ─── */}
-      <aside className="sidebar">
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "28px", paddingLeft: "8px" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22H22L12 2ZM12 6L18.8 19.6H5.2L12 6Z" fill="var(--text-primary)"/></svg>
-            <span style={{ fontSize: "19px", fontWeight: 700, letterSpacing: "-0.5px" }}>Personal Hub</span>
-          </div>
-          <nav>
-            <div onClick={() => setActiveTab("expenses")} className={`nav-link ${activeTab === "expenses" ? "active" : ""}`}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-              Expenses Ledger
-            </div>
-            <div onClick={() => setActiveTab("media")} className={`nav-link ${activeTab === "media" ? "active" : ""}`}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-              Media Watchlist
-            </div>
-          </nav>
+      {/* Mobile Header & Bottom Navigation */}
+      <MobileHeader
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        user={user}
+        showInvestmentsTab={showInvestmentsTab}
+        triggerConfirm={triggerConfirm}
+        firebaseAuth={firebaseAuth}
+        setExpenses={setExpenses}
+        setWatchlist={setWatchlist}
+        setExpensesLoaded={setExpensesLoaded}
+        disconnectAnilist={disconnectAnilist}
+        disconnectTrakt={disconnectTrakt}
+      />
 
-          {/* AniList connection block */}
-          <div style={{ marginTop: "24px", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
-            <span className="label-mono" style={{ paddingLeft: "14px", marginBottom: "10px", display: "block" }}>Integrations</span>
-            {anilistUser ? (
-              <div style={{ padding: "10px 14px", display: "flex", gap: "10px", alignItems: "center" }}>
-                {anilistUser.avatar
-                  ? <img src={anilistUser.avatar} alt="AL" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover" }} />
-                  : <div style={{ width: "28px", height: "28px", borderRadius: "50%", backgroundColor: "var(--accent-anime)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "#fff", fontWeight: 700 }}>AL</div>}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{anilistUser.name}</p>
-                  <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>AniList connected</p>
-                </div>
-                <button onClick={disconnectAnilist} title="Disconnect AniList" style={{ backgroundColor: "transparent", color: "var(--text-muted)", padding: "2px" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            ) : (
-              <button onClick={connectAnilist} className="nav-link" style={{ width: "100%", textAlign: "left" }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                Connect AniList
-              </button>
-            )}
-            {traktUser ? (
-              <div style={{ padding: "10px 14px", display: "flex", gap: "10px", alignItems: "center" }}>
-                {traktUser.avatar
-                  ? <img src={traktUser.avatar} alt="Trakt" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover" }} />
-                  : <div style={{ width: "28px", height: "28px", borderRadius: "50%", backgroundColor: "var(--accent-anime)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "#fff", fontWeight: 700 }}>TR</div>}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{traktUser.name || traktUser.username}</p>
-                  <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Trakt connected</p>
-                </div>
-                <button onClick={disconnectTrakt} title="Disconnect Trakt" style={{ backgroundColor: "transparent", color: "var(--text-muted)", padding: "2px" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            ) : (
-              <button onClick={connectTrakt} className="nav-link" style={{ width: "100%", textAlign: "left" }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                Connect Trakt
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Sidebar Navigation */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        user={user}
+        anilistUser={anilistUser}
+        traktUser={traktUser}
+        connectAnilist={connectAnilist}
+        disconnectAnilist={disconnectAnilist}
+        syncAnilist={syncAnilist}
+        isSyncingAnilist={isSyncingAnilist}
+        connectTrakt={connectTrakt}
+        disconnectTrakt={disconnectTrakt}
+        syncTrakt={syncTrakt}
+        isSyncingTrakt={isSyncingTrakt}
+        showInvestmentsTab={showInvestmentsTab}
+        setShowOnboarding={setShowOnboarding}
+        triggerConfirm={triggerConfirm}
+        firebaseAuth={firebaseAuth}
+        setExpenses={setExpenses}
+        setWatchlist={setWatchlist}
+        setExpensesLoaded={setExpensesLoaded}
+      />
 
-        {/* Footer */}
-        <div>
-          <a href="/gpt" className="nav-link" style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "14px", borderRadius: 0, fontSize: "12px" }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
-            Connect to ChatGPT
-          </a>
-          <a href="/api/openapi.json" target="_blank" rel="noopener noreferrer" className="nav-link" style={{ marginBottom: "8px", fontSize: "12px" }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
-            OpenAPI Spec
-          </a>
-          <div className="profile-card">
-            {user.photoURL
-              ? <img src={user.photoURL} alt="profile" style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover" }} referrerPolicy="no-referrer" />
-              : <div className="profile-avatar">{(user.displayName || user.email || "U")[0].toUpperCase()}</div>}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.displayName || "User"}</p>
-              <p style={{ fontSize: "10px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</p>
-            </div>
-            <button onClick={async () => { if (firebaseAuth) await firebaseAuth.signOut(firebaseAuth.auth); setExpenses([]); setWatchlist([]); }} title="Sign out" style={{ backgroundColor: "transparent", padding: "4px", color: "var(--text-muted)" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* ─── Main Canvas ─── */}
-      <main className="main-content">
-        {/* Header */}
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-            <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
-              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>DATABASE</span>
-              <span style={{ fontWeight: 600 }}>Firestore</span>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e" }}></span>
-              <span style={{ color: "#22c55e", fontWeight: 600 }}>Active</span>
-            </div>
-            {anilistUser && (
-              <div style={{ backgroundColor: "#fff", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px 12px", display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
-                <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>ANILIST</span>
-                <span style={{ fontWeight: 600 }}>{anilistUser.name}</span>
-                <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#3b82f6" }}></span>
-                <span style={{ color: "#3b82f6", fontWeight: 600 }}>Connected</span>
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500 }}>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e" }}></span>
-              All systems operational
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            {activeTab === "expenses" && (
-              <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)} style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "6px" }}>
-                <option value="all">All time</option>
-                <option value="30">Last 30 days</option>
-                <option value="7">Last 7 days</option>
-              </select>
-            )}
-          </div>
-        </header>
-
-        {/* ─── EXPENSES TAB ─── */}
+      {/* Main Canvas */}
+      <main className="ml-[250px] flex max-w-[1300px] flex-1 flex-col gap-7 px-10 py-8 min-[769px]:max-[1100px]:ml-[210px] min-[769px]:max-[1100px]:gap-[22px] min-[769px]:max-[1100px]:px-7 min-[769px]:max-[1100px]:py-6 max-md:ml-0 max-md:w-full max-md:max-w-full max-md:gap-3.5 max-md:p-3.5 max-md:pb-[calc(68px+env(safe-area-inset-bottom))]">
+        {/* Expenses & Subscriptions */}
         {activeTab === "expenses" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
-              <div className="stat-card"><span className="label-mono">Total Spent</span><span className="stat-value">₹{totalSpent.toLocaleString("en-IN")}</span><span className="stat-subtext">{timeFilter === "all" ? "All time" : `Last ${timeFilter} days`}</span></div>
-              <div className="stat-card"><span className="label-mono">Charges Logged</span><span className="stat-value" style={{ color: "#b3666b" }}>{filteredExpenses.length}</span><span className="stat-subtext">Transactions</span></div>
-              <div className="stat-card"><span className="label-mono">Largest Charge</span><span className="stat-value" style={{ color: "#e39282", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>₹{largestCharge.toLocaleString("en-IN")}</span><span className="stat-subtext" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{largestItem?.title || "—"}</span></div>
-              <div className="stat-card"><span className="label-mono">Top Category</span><span className="stat-value" style={{ fontSize: "22px", marginTop: "8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{topCategory}</span><span className="stat-subtext">Highest share</span></div>
-            </div>
+          <>
+            <ExpensesTab
+              currency={currency}
+              setCurrency={setCurrency}
+              expenseTab={expenseTab}
+              setExpenseTab={setExpenseTab}
+              timeFilter={timeFilter}
+              setTimeFilter={setTimeFilter}
+              salaryDay={salaryDay}
+              setSalaryDay={setSalaryDay}
+              totalSpent={totalSpent}
+              filteredExpenses={filteredExpenses}
+              largestCharge={largestCharge}
+              largestItem={largestItem}
+              topCategory={topCategory}
+              activeChart={activeChart}
+              setActiveChart={setActiveChart}
+              catBreakdown={catBreakdown}
+              dailyTrend={dailyTrend}
+              addExpense={addExpense}
+              expenseTitle={expenseTitle}
+              setExpenseTitle={setExpenseTitle}
+              expenseAmount={expenseAmount}
+              setExpenseAmount={setExpenseAmount}
+              expenseCategory={expenseCategory}
+              setExpenseCategory={setExpenseCategory}
+              allCategories={allCategories}
+              newCategoryInput={newCategoryInput}
+              setNewCategoryInput={setNewCategoryInput}
+              customCategories={customCategories}
+              setCustomCategories={setCustomCategories}
+              expenseDate={expenseDate}
+              setExpenseDate={setExpenseDate}
+              expenseNotes={expenseNotes}
+              setExpenseNotes={setExpenseNotes}
+              isAddingExpense={isAddingExpense}
+              deleteExpense={deleteExpense}
+              expenseSearch={expenseSearch}
+              setExpenseSearch={setExpenseSearch}
+              ledgerCategoryFilter={ledgerCategoryFilter}
+              setLedgerCategoryFilter={setLedgerCategoryFilter}
+              ledgerMinAmount={ledgerMinAmount}
+              setLedgerMinAmount={setLedgerMinAmount}
+              ledgerMaxAmount={ledgerMaxAmount}
+              setLedgerMaxAmount={setLedgerMaxAmount}
+              isFetchingExpenses={isFetchingExpenses}
+              expensesLoaded={expensesLoaded}
+            />
 
-            {/* Chart */}
-            <div className="bento-card">
-              <h3 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "24px" }}>Category Distribution</h3>
-              <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: "180px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "8px" }}>
-                {Object.entries(catBreakdown).slice(0, 8).map(([cat, total], idx) => {
-                  const maxAmt = Math.max(...Object.values(catBreakdown), 1);
-                  const pct = (total / maxAmt) * 100;
-                  const colors = ["#b3666b", "#e39282", "#1c1b18", "#6e6c64", "#d1b89a", "#eae8e0", "#9c9a92", "#c4c2ba"];
-                  return (
-                    <div key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", flex: 1, maxWidth: "80px" }}>
-                      <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>₹{(total/1000).toFixed(0)}k</span>
-                      <div style={{ width: "22px", height: "140px", display: "flex", alignItems: "flex-end", backgroundColor: "var(--bg-secondary)", borderRadius: "4px 4px 0 0" }}>
-                        <div style={{ width: "100%", height: `${pct}%`, backgroundColor: colors[idx % colors.length], borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }}></div>
-                      </div>
-                      <span style={{ fontSize: "9px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }} title={cat}>{cat}</span>
-                    </div>
-                  );
-                })}
-                {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "13px", alignSelf: "center" }}>No transactions to plot.</p>}
-              </div>
-            </div>
-
-            {/* Form + table */}
-            <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                <div className="bento-card">
-                  <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Log Transaction</span>
-                  <form onSubmit={addExpense} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-                    <input type="text" value={expenseTitle} onChange={(e) => setExpenseTitle(e.target.value)} placeholder="Description" required />
-                    <input type="number" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="Amount (₹)" required />
-                    <input type="text" value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)} placeholder="Category" />
-                    <input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
-                    <input type="text" value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} placeholder="Notes" />
-                    <button type="submit" disabled={isAddingExpense} className="btn-primary" style={{ marginTop: "4px" }}>{isAddingExpense ? "Logging..." : "Log Item"}</button>
-                  </form>
-                </div>
-                <div className="bento-card">
-                  <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Categories</span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {Object.entries(catBreakdown).map(([cat, total]) => {
-                      const pct = totalSpent > 0 ? (total / totalSpent) * 100 : 0;
-                      return (
-                        <div key={cat} style={{ fontSize: "12px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}><span style={{ fontWeight: 500 }}>{cat}</span><span style={{ fontFamily: "monospace", color: "var(--text-secondary)", fontSize: "11px" }}>{pct.toFixed(0)}%</span></div>
-                          <div style={{ height: "3px", backgroundColor: "var(--bg-secondary)", borderRadius: "2px" }}><div style={{ width: `${pct}%`, height: "100%", backgroundColor: "var(--text-primary)", borderRadius: "2px" }}></div></div>
-                        </div>
-                      );
-                    })}
-                    {Object.keys(catBreakdown).length === 0 && <p style={{ color: "var(--text-muted)", fontSize: "12px" }}>No categories yet.</p>}
-                  </div>
-                </div>
-              </div>
-              <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="label-mono">Ledger Sheet</span>
-                  <input type="text" value={expenseSearch} onChange={(e) => setExpenseSearch(e.target.value)} placeholder="Search..." style={{ fontSize: "12px", padding: "6px 12px", width: "180px" }} />
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  {isFetchingExpenses ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px", fontSize: "13px" }}>Loading...</p> : (
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                      <thead><tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Description</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Category</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "left" }}>Date</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "right" }}>Amount</th>
-                        <th style={{ paddingBottom: "10px", fontWeight: 500, textAlign: "center" }}></th>
-                      </tr></thead>
-                      <tbody>
-                        {filteredExpenses.map((e) => (
-                          <tr key={e.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                            <td style={{ padding: "11px 0", fontWeight: 500 }}>{e.title}</td>
-                            <td style={{ padding: "11px 0" }}>{e.category ? <span style={{ backgroundColor: "var(--bg-secondary)", padding: "2px 8px", borderRadius: "9999px", fontSize: "11px" }}>{e.category}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                            <td style={{ padding: "11px 0", color: "var(--text-secondary)" }}>{e.date || "—"}</td>
-                            <td style={{ padding: "11px 0", textAlign: "right", fontWeight: 600 }}>₹{(e.amount || 0).toLocaleString("en-IN")}</td>
-                            <td style={{ padding: "11px 0", textAlign: "center" }}><button onClick={() => archiveExpenseItem(e.id)} style={{ backgroundColor: "transparent", color: "#ef4444", fontSize: "11px", padding: "2px 8px" }}>Archive</button></td>
-                          </tr>
-                        ))}
-                        {filteredExpenses.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>No transactions.</td></tr>}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+            {expenseTab === "subscriptions" && (
+              <SubscriptionsTab
+                subscriptions={subscriptions}
+                currency={currency}
+                subName={subName}
+                setSubName={setSubName}
+                subIcon={subIcon}
+                setSubIcon={setSubIcon}
+                subCost={subCost}
+                setSubCost={setSubCost}
+                subCycle={subCycle}
+                setSubCycle={setSubCycle}
+                subNextDate={subNextDate}
+                setSubNextDate={setSubNextDate}
+                isAddingSub={isAddingSub}
+                addSubscription={addSubscription}
+                deleteSubscription={deleteSubscription}
+                isFetchingSubscriptions={isFetchingSubscriptions}
+              />
+            )}
+          </>
         )}
 
-        {/* ─── MEDIA TAB ─── */}
+        {/* Media Watchlist */}
         {activeTab === "media" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "28px" }} className="animate-fade-in">
+          <WatchlistTab
+            watchlist={watchlist}
+            watchlistFilter={watchlistFilter}
+            setWatchlistFilter={setWatchlistFilter}
+            mediaQuery={mediaQuery}
+            setMediaQuery={setMediaQuery}
+            mediaType={mediaType}
+            setMediaType={setMediaType}
+            searchMedia={searchMedia}
+            isSearchingMedia={isSearchingMedia}
+            searchResults={searchResults}
+            addToWatchlist={addToWatchlist}
+            updateWatchItem={updateWatchItem}
+            deleteWatchItem={deleteWatchItem}
+            isFetchingWatchlist={isFetchingWatchlist}
+            showLetterboxdModal={showLetterboxdModal}
+            setShowLetterboxdModal={setShowLetterboxdModal}
+            letterboxdCsv={letterboxdCsv}
+            setLetterboxdCsv={setLetterboxdCsv}
+            handleLetterboxdImport={handleLetterboxdImport}
+            isImportingLetterboxd={isImportingLetterboxd}
+            anilistUser={anilistUser}
+            connectAnilist={connectAnilist}
+            disconnectAnilist={disconnectAnilist}
+            syncAnilist={syncAnilist}
+            isSyncingAnilist={isSyncingAnilist}
+            traktUser={traktUser}
+            connectTrakt={connectTrakt}
+            disconnectTrakt={disconnectTrakt}
+            syncTrakt={syncTrakt}
+            isSyncingTrakt={isSyncingTrakt}
+          />
+        )}
 
-            {/* Stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
-              <div className="stat-card"><span className="label-mono">Watching Now</span><span className="stat-value">{watchingCount}</span><span className="stat-subtext">Active items</span></div>
-              <div className="stat-card"><span className="label-mono">Plan to Watch</span><span className="stat-value" style={{ color: "#b3666b" }}>{planCount}</span><span className="stat-subtext">Queued</span></div>
-              <div className="stat-card"><span className="label-mono">Completed</span><span className="stat-value" style={{ color: "#e39282" }}>{completedCount}</span><span className="stat-subtext">Finished</span></div>
-              <div className="stat-card">
-                <span className="label-mono">Library</span>
-                <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{animeCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Anime</p></div>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{showCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Shows</p></div>
-                  <div style={{ textAlign: "center" }}><p style={{ fontSize: "20px", fontWeight: 700 }}>{movieCount}</p><p style={{ fontSize: "10px", color: "var(--text-muted)" }}>Movies</p></div>
-                </div>
-              </div>
-            </div>
+        {/* Book Library */}
+        {activeTab === "books" && (
+          <BooksTab
+            watchlist={watchlist}
+            bookQuery={bookQuery}
+            setBookQuery={setBookQuery}
+            searchBooks={searchBooks}
+            isSearchingBooks={isSearchingBooks}
+            bookResults={bookResults}
+            addBook={addBook}
+            bookFilter={bookFilter}
+            setBookFilter={setBookFilter}
+            updateWatchItem={updateWatchItem}
+            deleteWatchItem={deleteWatchItem}
+            isFetchingWatchlist={isFetchingWatchlist}
+          />
+        )}
 
-            {/* AniList sync banner */}
-            {anilistUser && (
-              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px" }}>
-                {anilistUser.avatar && <img src={anilistUser.avatar} alt="AL" style={{ width: "36px", height: "36px", borderRadius: "50%" }} />}
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: "13px", fontWeight: 600, color: "#1e40af" }}>AniList connected as {anilistUser.name}</p>
-                  <p style={{ fontSize: "11px", color: "#3b82f6", marginTop: "2px" }}>
-                    {anilistSyncMsg || "Import your full AniList library and keep progress synced both ways."}
-                  </p>
-                </div>
-                <button onClick={syncAnilistLibrary} disabled={isSyncingAnilist} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
-                  {isSyncingAnilist ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
-                      Syncing...
-                    </span>
-                  ) : "↓ Sync Library"}
-                </button>
-              </div>
-            )}
+        {/* Quick Notes */}
+        {activeTab === "notes" && (
+          <NotesTab
+            noteContent={noteContent}
+            updateNote={updateNote}
+            isSavingNote={isSavingNote}
+            isFetchingNote={isFetchingNote}
+          />
+        )}
 
-            {/* Trakt sync banner */}
-            {traktUser && (
-              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center", gap: "14px" }}>
-                {traktUser.avatar && <img src={traktUser.avatar} alt="Trakt" style={{ width: "36px", height: "36px", borderRadius: "50%" }} />}
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: "13px", fontWeight: 600, color: "#1e40af" }}>Trakt connected as {traktUser.name || traktUser.username}</p>
-                  <p style={{ fontSize: "11px", color: "#3b82f6", marginTop: "2px" }}>
-                    {traktSyncMsg || "Import your Trakt watchlist and watched history for movies & shows."}
-                  </p>
-                </div>
-                <button onClick={syncTraktLibrary} disabled={isSyncingTrakt} className="btn-primary" style={{ backgroundColor: "#2563eb", borderColor: "#2563eb", fontSize: "12px", padding: "8px 16px", whiteSpace: "nowrap" }}>
-                  {isSyncingTrakt ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ width: "12px", height: "12px", border: "1.5px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }}></span>
-                      Syncing...
-                    </span>
-                  ) : "↓ Sync Library"}
-                </button>
-              </div>
-            )}
-
-            {/* Content grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "24px" }}>
-              {/* Search */}
-              <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px", alignSelf: "start" }}>
-                <div>
-                  <span className="label-mono">Search & Add</span>
-                  <p style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>AniList &amp; Trakt search</p>
-                </div>
-                <form onSubmit={searchMedia} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-                  <input type="text" value={mediaQuery} onChange={(e) => setMediaQuery(e.target.value)} placeholder="Search title..." />
-                  <select value={mediaType} onChange={(e) => setMediaType(e.target.value as any)}>
-                    <option value="anime">Anime (AniList)</option>
-                    <option value="movie">Movies (Trakt)</option>
-                    <option value="show">TV Shows (Trakt)</option>
-                  </select>
-                  <button type="submit" className="btn-primary">Search</button>
-                </form>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "420px", overflowY: "auto" }}>
-                  {searchResults.map((item, i) => (
-                    <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "10px" }}>
-                      {item.coverImage ? <img src={item.coverImage} alt={item.title} style={{ width: "34px", height: "48px", objectFit: "cover", borderRadius: "4px" }} /> : <div style={{ width: "34px", height: "48px", backgroundColor: "var(--bg-secondary)", borderRadius: "4px" }}></div>}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
-                        <p style={{ fontSize: "10px", color: "var(--text-secondary)" }}>{item.year || "N/A"} · {item.type}{item.totalEpisodes ? ` · ${item.totalEpisodes} eps` : ""}</p>
-                      </div>
-                      <button onClick={() => addMediaToWatchlist(item)} className="btn-secondary" style={{ padding: "4px 8px", fontSize: "11px" }}>+ Add</button>
-                    </div>
-                  ))}
-                  {isSearchingMedia && <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px" }}>Searching...</p>}
-                </div>
-              </div>
-
-              {/* Watchlist */}
-              <div className="bento-card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-                    {/* Left: Category Switch Tabs */}
-                    <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
-                      <button
-                        onClick={() => {
-                          setMediaCategory("general");
-                          if (watchlistFilter === "anime") setWatchlistFilter("all");
-                        }}
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          padding: "6px 14px",
-                          backgroundColor: mediaCategory === "general" ? "#fff" : "transparent",
-                          color: mediaCategory === "general" ? "var(--text-primary)" : "var(--text-secondary)",
-                          borderRadius: "6px",
-                          boxShadow: mediaCategory === "general" ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
-                          transition: "all 0.2s",
-                          border: "none",
-                          cursor: "pointer"
-                        }}
-                      >
-                        🎬 Movies & Shows
-                      </button>
-                      <button
-                        onClick={() => {
-                          setMediaCategory("anime");
-                        }}
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          padding: "6px 14px",
-                          backgroundColor: mediaCategory === "anime" ? "#fff" : "transparent",
-                          color: mediaCategory === "anime" ? "var(--text-primary)" : "var(--text-secondary)",
-                          borderRadius: "6px",
-                          boxShadow: mediaCategory === "anime" ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
-                          transition: "all 0.2s",
-                          border: "none",
-                          cursor: "pointer"
-                        }}
-                      >
-                        🌸 Anime
-                      </button>
-                    </div>
-
-                    {/* Right: Sub-filters and Status Tabs */}
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                      {/* Sub-type filter for general (Movies & Shows) */}
-                      {mediaCategory === "general" && (
-                        <select
-                          value={watchlistFilter === "anime" ? "all" : watchlistFilter}
-                          onChange={(e) => setWatchlistFilter(e.target.value as any)}
-                          style={{ fontSize: "11px", padding: "5px 10px", borderRadius: "6px", backgroundColor: "#fff" }}
-                        >
-                          <option value="all">All Types</option>
-                          <option value="show">Shows Only</option>
-                          <option value="movie">Movies Only</option>
-                        </select>
-                      )}
-
-                      {/* Status tabs */}
-                      <div style={{ display: "flex", gap: "3px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
-                        {(["watching", "plan", "completed"] as const).map((tab) => (
-                          <button
-                            key={tab}
-                            onClick={() => setWatchlistTab(tab)}
-                            style={{
-                              fontSize: "11px",
-                              padding: "5px 10px",
-                              backgroundColor: watchlistTab === tab ? "#fff" : "transparent",
-                              color: watchlistTab === tab ? "var(--text-primary)" : "var(--text-secondary)",
-                              borderRadius: "6px",
-                              boxShadow: watchlistTab === tab ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
-                              transition: "all 0.2s",
-                              border: "none",
-                              cursor: "pointer"
-                            }}
-                          >
-                            {tab === "watching" ? "🍿 Watching" : tab === "plan" ? "⏳ Plan" : "✅ Done"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: "300px" }}>
-                  {isFetchingWatchlist
-                    ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Loading...</p>
-                    : filteredWatchlist.length === 0
-                    ? <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "60px", fontSize: "13px" }}>Nothing here yet.</p>
-                    : filteredWatchlist.map((item) => (
-                      <div key={item.id} style={{ display: "flex", gap: "12px", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
-                        {item.coverImage ? <img src={item.coverImage} alt={item.title} style={{ width: "38px", height: "54px", objectFit: "cover", borderRadius: "6px" }} /> : <div style={{ width: "38px", height: "54px", backgroundColor: "var(--bg-secondary)", borderRadius: "6px" }}></div>}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <p style={{ fontSize: "14px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</p>
-                            {/* Sync indicator */}
-                            {item.anilistId && anilistUser && (
-                              <span title="Synced with AniList" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#3b82f6", flexShrink: 0 }}></span>
-                            )}
-                            {item.traktId && traktUser && (
-                              <span title="Synced with Trakt" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#ef4444", flexShrink: 0 }}></span>
-                            )}
-                          </div>
-                          <p style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                            <span style={{ textTransform: "capitalize" }}>{item.type}</span>{item.year ? ` (${item.year})` : ""}
-                          </p>
-                          {item.type !== "movie" && (
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "5px" }}>
-                              <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Ep {item.progress}{item.totalEpisodes ? `/${item.totalEpisodes}` : ""}</span>
-                              <button onClick={() => updateWatchItem(item, { progress: Math.max(0, item.progress - 1) })} style={{ backgroundColor: "var(--bg-secondary)", padding: "1px 6px", fontSize: "11px", borderRadius: "4px" }}>-</button>
-                              <button onClick={() => { const n = item.progress + 1; updateWatchItem(item, { progress: n, ...(item.totalEpisodes && n >= item.totalEpisodes ? { status: "completed" } : {}) }); }} style={{ backgroundColor: "var(--bg-secondary)", padding: "1px 6px", fontSize: "11px", borderRadius: "4px" }}>+</button>
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end" }}>
-                          <select value={item.status} onChange={(e) => updateWatchItem(item, { status: e.target.value as any })} style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px" }}>
-                            <option value="plan_to_watch">Plan</option>
-                            <option value="watching">Watching</option>
-                            <option value="completed">Completed</option>
-                            <option value="dropped">Dropped</option>
-                          </select>
-                          <select value={item.rating || ""} onChange={(e) => updateWatchItem(item, { rating: e.target.value ? Number(e.target.value) : null })} style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px" }}>
-                            <option value="">Score</option>
-                            {[...Array(10)].map((_, i) => <option key={i + 1} value={i + 1}>{i + 1}/10</option>)}
-                          </select>
-                          <button onClick={() => deleteWatchItem(item.id)} style={{ backgroundColor: "transparent", color: "#ef4444", padding: "2px", fontSize: "11px" }}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Investments & Portfolio */}
+        {activeTab === "investments" && (
+          <InvestmentsTab
+            investments={investments}
+            currency={currency}
+            invName={invName}
+            setInvName={setInvName}
+            invCategory={invCategory}
+            setInvCategory={setInvCategory}
+            invQuantity={invQuantity}
+            setInvQuantity={setInvQuantity}
+            invBuyPrice={invBuyPrice}
+            setInvBuyPrice={setInvBuyPrice}
+            invAmount={invAmount}
+            setInvAmount={setInvAmount}
+            invNotes={invNotes}
+            setInvNotes={setInvNotes}
+            isAddingAsset={isAddingAsset}
+            addInvestment={addInvestment}
+            deleteInvestment={deleteInvestment}
+            isUpdatingPrices={isUpdatingPrices}
+            updateMarketPrices={updateMarketPrices}
+            isFetchingInvestments={isFetchingInvestments}
+            invSuggestions={invSuggestions}
+            setInvSuggestions={setInvSuggestions}
+            selectSuggestion={selectSuggestion}
+          />
         )}
       </main>
+
+      {/* Themed Confirm & Alert Modal */}
+      <ConfirmModal confirmDlg={confirmDlg} setConfirmDlg={setConfirmDlg} />
+
+      {/* Feature Guide Onboarding Modal */}
+      <OnboardingModal
+        showOnboarding={showOnboarding}
+        setShowOnboarding={setShowOnboarding}
+        showInvestmentsTab={showInvestmentsTab}
+      />
+
+      {/* Letterboxd Import Modal */}
+      {showLetterboxdModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="flex w-[450px] flex-col gap-4 rounded-card border border-border-subtle bg-white p-6 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_10px_10px_-5px_rgba(0,0,0,0.04)]">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-semibold tracking-[0.8px] text-text-secondary uppercase">Import Letterboxd CSV</span>
+              <button onClick={() => setShowLetterboxdModal(false)} className="cursor-pointer border-none bg-transparent p-1 text-base">✕</button>
+            </div>
+            <p className="text-xs leading-[1.4] text-text-muted">
+              Paste the contents of your Letterboxd <code>watchlist.csv</code> or <code>watched.csv</code> file below. We will parse it and add the movies to your library automatically.
+            </p>
+            <textarea
+              rows={8}
+              placeholder={`Date,Name,Year,Letterboxd URI
+2026-07-22,Interstellar,2014,https://boxd.it/...
+2026-07-22,The Prestige,2006,https://boxd.it/...`}
+              value={letterboxdCsv}
+              onChange={(e) => setLetterboxdCsv(e.target.value)}
+              className="w-full resize-y rounded-md border border-border-subtle bg-bg-primary p-2.5 font-mono text-[11px] outline-none"
+            />
+            <div className="flex justify-end gap-2.5">
+              <button onClick={() => setShowLetterboxdModal(false)} className="h-9 cursor-pointer rounded-md border border-border-subtle bg-transparent px-4 text-xs font-medium text-text-primary transition-all duration-200 hover:bg-bg-primary">
+                Cancel
+              </button>
+              <button
+                onClick={handleLetterboxdImport}
+                disabled={isImportingLetterboxd || !letterboxdCsv.trim()}
+                className="h-9 cursor-pointer rounded-md border border-text-primary bg-text-primary px-5 text-xs font-medium text-white transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isImportingLetterboxd ? "Importing..." : "Import Movies"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,37 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,600&display=swap');
+@import "tailwindcss";
 
+/* Mirrors the :root tokens below into Tailwind's theme namespace (bg-bg-primary,
+   text-text-primary, rounded-card, ...) without renaming the existing vars that
+   inline styles across the app still read directly. */
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-card: var(--bg-card);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-hover: var(--border-hover);
+  --color-accent-blue: var(--accent-blue);
+
+  --radius-card: 12px;
+  --radius-button: 8px;
+
+  --shadow-subtle: 0 4px 20px -2px rgba(110, 108, 100, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(28, 27, 24, 0.06);
+
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+  --font-serif: 'Playfair Display', serif;
+}
+
+/* Wrapped in Tailwind's "base" layer so utility classes (which live in the
+   higher-priority "utilities" layer) can always override these base element
+   resets — unlayered CSS otherwise beats any @layer'd CSS regardless of
+   specificity, which was silently overriding Tailwind's button/input/etc.
+   utilities. */
+@layer base {
 :root {
   --bg-primary: #f4f3ec; /* warm neutral paper canvas background */
   --bg-secondary: #eae8e0; /* slightly darker neutral background */
@@ -32,99 +64,6 @@ body {
   min-height: 100vh;
 }
 
-/* Sidebar structure */
-.app-container {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 250px;
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
-  padding: 24px 16px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 100;
-}
-
-.main-content {
-  margin-left: 250px;
-  flex: 1;
-  padding: 32px 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  max-width: 1300px;
-}
-
-/* Nav links */
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: var(--radius-button);
-  transition: all 0.2s ease;
-  margin-bottom: 4px;
-  cursor: pointer;
-}
-
-.nav-link:hover {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.nav-link.active {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-/* Monospace label uppercase */
-.label-mono {
-  font-family: monospace;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-/* Stat Blocks */
-.stat-card {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 20px;
-  box-shadow: var(--shadow-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-}
-
-.stat-subtext {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
 /* Form inputs & dropdowns */
 input, select, textarea {
   font-family: var(--font-body);
@@ -143,15 +82,6 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--shadow-focus);
 }
 
-/* Dashboard Cards */
-.bento-card {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 24px;
-  box-shadow: var(--shadow-subtle);
-}
-
 /* Buttons */
 button {
   font-family: var(--font-body);
@@ -164,58 +94,11 @@ button {
   border: none;
 }
 
-.btn-primary {
-  background-color: var(--text-primary);
-  color: #ffffff;
-  border: 1px solid var(--text-primary);
-}
-
-.btn-primary:hover {
-  background-color: #2e2d27;
-  border-color: #2e2d27;
-}
-
-.btn-secondary {
-  background-color: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-}
-
-.btn-secondary:hover {
-  background-color: var(--bg-primary);
-}
-
-/* Profiles */
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 16px;
-}
-
-.profile-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: var(--text-primary);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
-}
-
-/* Animations */
+/* Referenced via Tailwind's arbitrary animate-[fadeIn_...] utility across the
+   dashboard tab components. */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Scrollbars */
@@ -233,3 +116,4 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-hover);
 }
+} /* end @layer base */

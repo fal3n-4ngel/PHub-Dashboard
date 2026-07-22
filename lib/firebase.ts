@@ -24,7 +24,7 @@ export interface ExpenseRecord {
 export interface WatchlistItem {
   id?: string;
   title: string;
-  type: "movie" | "show" | "anime";
+  type: "movie" | "show" | "anime" | "book";
   status: "plan_to_watch" | "watching" | "completed" | "dropped";
   progress: number;
   totalEpisodes: number | null;
@@ -49,7 +49,7 @@ export interface SyncEntry {
   traktId?: number | null;
 }
 
-export type SyncSource = "anilist" | "trakt";
+export type SyncSource = "anilist" | "trakt" | "letterboxd" | "manual" | string;
 
 /* ─── Firestore REST transport ───
  * All reads/writes go through the Firestore REST API authenticated with the
@@ -76,7 +76,7 @@ function docName(session: Session, ...segments: string[]): string {
   return `projects/${session.config.projectId}/databases/(default)/documents/${segments.join("/")}`;
 }
 
-async function fsFetch(session: Session, url: string, init?: RequestInit): Promise<any> {
+async function fsFetch<T = unknown>(session: Session, url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -101,7 +101,27 @@ async function fsFetch(session: Session, url: string, init?: RequestInit): Promi
 
 /* ─── Firestore value encoding ─── */
 
-function toValue(v: unknown): any {
+// Mirrors the Firestore REST API's discriminated "Value" wire format.
+type FirestoreValue =
+  | { nullValue: null }
+  | { stringValue: string }
+  | { booleanValue: boolean }
+  | { integerValue: string }
+  | { doubleValue: number }
+  | { arrayValue: { values?: FirestoreValue[] } }
+  | { mapValue: { fields?: Record<string, FirestoreValue> } }
+  | { timestampValue: string };
+
+interface FirestoreDocument {
+  name: string;
+  fields?: Record<string, FirestoreValue>;
+}
+
+interface RunQueryRow {
+  document?: FirestoreDocument;
+}
+
+function toValue(v: unknown): FirestoreValue {
   if (v === null || v === undefined) return { nullValue: null };
   if (typeof v === "string") return { stringValue: v };
   if (typeof v === "boolean") return { booleanValue: v };
@@ -113,16 +133,15 @@ function toValue(v: unknown): any {
   throw new ApiError(400, "Unsupported value type in payload.");
 }
 
-function toFields(obj: Record<string, unknown>): Record<string, any> {
-  const fields: Record<string, any> = {};
+function toFields(obj: Record<string, unknown>): Record<string, FirestoreValue> {
+  const fields: Record<string, FirestoreValue> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (value !== undefined) fields[key] = toValue(value);
   }
   return fields;
 }
 
-function fromValue(v: any): unknown {
-  if (v === null || v === undefined) return null;
+function fromValue(v: FirestoreValue): unknown {
   if ("stringValue" in v) return v.stringValue;
   if ("integerValue" in v) return Number(v.integerValue);
   if ("doubleValue" in v) return v.doubleValue;
@@ -134,7 +153,7 @@ function fromValue(v: any): unknown {
   return null;
 }
 
-function fromFields(fields: Record<string, any>): Record<string, unknown> {
+function fromFields(fields: Record<string, FirestoreValue> | undefined): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields || {})) {
     obj[key] = fromValue(value);
@@ -162,13 +181,13 @@ async function runOwnedQuery(session: Session, collectionId: string): Promise<{ 
     },
   };
 
-  const rows: any[] = await fsFetch(session, `${docsRoot(session)}:runQuery`, {
+  const rows = await fsFetch<RunQueryRow[]>(session, `${docsRoot(session)}:runQuery`, {
     method: "POST",
     body: JSON.stringify(body),
   });
 
   return (rows || [])
-    .filter((row) => row.document)
+    .filter((row): row is Required<RunQueryRow> => !!row.document)
     .map((row) => ({ id: idFromName(row.document.name), data: fromFields(row.document.fields) }));
 }
 
@@ -278,7 +297,7 @@ export async function createExpense(session: Session, entry: ExpenseEntry) {
     createdAt: Date.now(),
   };
 
-  const created = await fsFetch(session, `${docsRoot(session)}/expenses`, {
+  const created = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/expenses`, {
     method: "POST",
     body: JSON.stringify({ fields: toFields(docData) }),
   });
@@ -450,7 +469,7 @@ async function getRawWatchlist(session: Session): Promise<Record<string, Watchli
 
   let items: Record<string, WatchlistItem>;
   try {
-    const snap = await fsFetch(session, `${docsRoot(session)}/watchlists/${session.uid}`);
+    const snap = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/watchlists/${session.uid}`);
     items = (fromFields(snap.fields).items as Record<string, WatchlistItem>) || {};
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
@@ -505,14 +524,22 @@ export async function bulkSyncWatchlist(
   source: SyncSource,
   entries: SyncEntry[]
 ): Promise<{ added: number; updated: number; skipped: number }> {
-  const idField = source === "anilist" ? "anilistId" : "traktId";
+  const idField = source === "anilist" ? "anilistId" : source === "trakt" ? "traktId" : null;
 
   const itemsMap = await getRawWatchlist(session);
   const existingByExternalId = new Map<number, { id: string; item: WatchlistItem }>();
+  const existingByTitleType = new Map<string, { id: string; item: WatchlistItem }>();
+
   Object.entries(itemsMap).forEach(([id, item]) => {
-    const extId = item[idField];
-    if (extId !== undefined && extId !== null) {
-      existingByExternalId.set(Number(extId), { id, item });
+    if (idField) {
+      const extId = item[idField];
+      if (extId !== undefined && extId !== null) {
+        existingByExternalId.set(Number(extId), { id, item });
+      }
+    }
+    if (item.title && item.type) {
+      const key = `${item.type.toLowerCase()}:${item.title.toLowerCase().trim()}`;
+      existingByTitleType.set(key, { id, item });
     }
   });
 
@@ -522,14 +549,32 @@ export async function bulkSyncWatchlist(
   const newIds = new Set<string>();
 
   for (const entry of entries) {
-    const extId = source === "anilist" ? entry.anilistId : entry.traktId;
-    const match = extId !== undefined && extId !== null ? existingByExternalId.get(Number(extId)) : undefined;
+    const extId = source === "anilist" ? entry.anilistId : source === "trakt" ? entry.traktId : null;
+    let match = extId !== undefined && extId !== null ? existingByExternalId.get(Number(extId)) : undefined;
+
+    if (!match && entry.title && entry.type) {
+      const key = `${entry.type.toLowerCase()}:${entry.title.toLowerCase().trim()}`;
+      match = existingByTitleType.get(key);
+    }
 
     if (match) {
+      const totalEp = entry.totalEpisodes !== undefined && entry.totalEpisodes !== null
+        ? Number(entry.totalEpisodes)
+        : (match.item.totalEpisodes !== undefined && match.item.totalEpisodes !== null ? Number(match.item.totalEpisodes) : null);
+      const prog = entry.progress !== undefined && entry.progress !== null
+        ? Number(entry.progress)
+        : (match.item.progress !== undefined && match.item.progress !== null ? Number(match.item.progress) : 0);
+
+      let finalStatus = entry.status;
+      if (totalEp && totalEp > 0 && prog >= totalEp) {
+        finalStatus = "completed";
+      }
+
       const changed =
-        match.item.status !== entry.status ||
+        match.item.status !== finalStatus ||
         Number(match.item.progress || 0) !== Number(entry.progress || 0) ||
-        Number(match.item.rating || 0) !== Number(entry.rating || 0);
+        Number(match.item.rating || 0) !== Number(entry.rating || 0) ||
+        (entry.coverImage && match.item.coverImage !== entry.coverImage);
 
       if (!changed) {
         skipped++;
@@ -537,18 +582,27 @@ export async function bulkSyncWatchlist(
       }
 
       patches[match.id] = {
-        status: entry.status,
+        status: finalStatus,
         progress: entry.progress,
         rating: entry.rating,
+        ...(entry.coverImage ? { coverImage: entry.coverImage } : {}),
         updatedAt: now,
       };
       updated++;
     } else {
       const id = randomUUID();
+      const totalEp = entry.totalEpisodes !== undefined && entry.totalEpisodes !== null ? Number(entry.totalEpisodes) : null;
+      const prog = entry.progress !== undefined && entry.progress !== null ? Number(entry.progress) : 0;
+      
+      let finalStatus = entry.status;
+      if (totalEp && totalEp > 0 && prog >= totalEp) {
+        finalStatus = "completed";
+      }
+
       patches[id] = {
         title: entry.title,
         type: entry.type,
-        status: entry.status,
+        status: finalStatus,
         progress: entry.progress,
         totalEpisodes: entry.totalEpisodes,
         rating: entry.rating,
@@ -572,4 +626,173 @@ export async function deleteWatchlistItem(session: Session, id: string) {
   await writeWatchlistItems(session, { [id]: null });
   cacheInvalidate(watchlistCacheKey(session));
   return { id };
+}
+export interface SubscriptionRecord { id: string; name: string; cost: number; billingCycle: "monthly" | "yearly"; nextBillingDate: string; icon: string | null; createdAt: number; }
+export interface NoteRecord { id: string; content: string; updatedAt: number; }
+
+const SUBSCRIPTION_CACHE_TTL = 30_000;
+
+function subscriptionCacheKey(session: Session): string {
+  return `subscriptions:${session.config.projectId}:${session.uid}`;
+}
+
+export async function listSubscriptions(session: Session): Promise<SubscriptionRecord[]> {
+  const cacheKey = subscriptionCacheKey(session);
+  const cached = cacheGet<SubscriptionRecord[]>(cacheKey);
+  if (cached) return cached;
+
+  const rows = await runOwnedQuery(session, "subscriptions");
+  const records = rows
+    .map(({ id, data }) => ({
+      id,
+      name: (data.name as string) || "Untitled",
+      cost: typeof data.cost === "number" ? data.cost : 0,
+      billingCycle: (data.billingCycle as SubscriptionRecord["billingCycle"]) || "monthly",
+      nextBillingDate: (data.nextBillingDate as string) || "",
+      icon: (data.icon as string) || null,
+      createdAt: typeof data.createdAt === "number" ? data.createdAt : 0,
+    }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  cacheSet(cacheKey, records, SUBSCRIPTION_CACHE_TTL);
+  return records;
+}
+
+export interface SubscriptionEntry {
+  name: string;
+  cost: number;
+  billingCycle: "monthly" | "yearly";
+  nextBillingDate: string;
+  icon?: string | null;
+}
+
+export async function createSubscription(session: Session, entry: SubscriptionEntry) {
+  const docData = {
+    userId: session.uid, // Partition by User UID; rules require it to match the token
+    name: entry.name,
+    cost: entry.cost,
+    billingCycle: entry.billingCycle,
+    nextBillingDate: entry.nextBillingDate,
+    icon: entry.icon || null,
+    createdAt: Date.now(),
+  };
+
+  const created = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/subscriptions`, {
+    method: "POST",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+  return { id: idFromName(created.name) };
+}
+
+export async function deleteSubscription(session: Session, id: string) {
+  assertDocId(id, "subscription");
+
+  await fsFetch(session, `${docsRoot(session)}/subscriptions/${id}?currentDocument.exists=true`, {
+    method: "DELETE",
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+  return { id };
+}
+
+export async function updateSubscription(session: Session, id: string, updates: Partial<SubscriptionRecord>) {
+  assertDocId(id, "subscription");
+  const docData = { ...updates };
+  
+  const params = new URLSearchParams();
+  Object.keys(updates).forEach((k) => {
+    params.append("updateMask.fieldPaths", k);
+  });
+
+  await fsFetch(session, `${docsRoot(session)}/subscriptions/${id}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+
+  cacheInvalidate(subscriptionCacheKey(session));
+}
+
+// Single doc per user (notes/{userId}), mirroring the watchlist doc shape —
+// ownership is enforced by the security rules matching the doc id to auth.uid.
+export async function getNote(session: Session): Promise<NoteRecord | null> {
+  try {
+    const res = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/notes/${session.uid}`);
+    const data = fromFields(res.fields || {});
+    return { id: session.uid, content: (data.content as string) || "", updatedAt: (data.updatedAt as number) || 0 };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function updateNote(session: Session, content: string) {
+  const docData = { content, updatedAt: Date.now() };
+  const params = new URLSearchParams();
+  params.append("updateMask.fieldPaths", "content");
+  params.append("updateMask.fieldPaths", "updatedAt");
+
+  await fsFetch(session, `${docsRoot(session)}/notes/${session.uid}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+}
+
+export interface InvestmentAsset {
+  id: string;
+  name: string;
+  category: "equity" | "crypto" | "mutual_fund" | "sip" | "gold" | "cash" | "other";
+  amount: number;
+  investedAmount: number;
+  quantity?: number;
+  buyPrice?: number;
+  currentPrice?: number;
+  notes?: string;
+  createdAt?: number;
+}
+
+export interface PortfolioRecord {
+  id: string;
+  assets: InvestmentAsset[];
+  updatedAt: number;
+}
+
+export async function getPortfolio(session: Session): Promise<PortfolioRecord | null> {
+  try {
+    const res = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/portfolios/${session.uid}`);
+    const data = fromFields(res.fields || {});
+    const assetsRaw = Array.isArray(data.assets) ? (data.assets as Record<string, unknown>[]) : [];
+
+    // Parse assets fields safely
+    const assets: InvestmentAsset[] = assetsRaw.map((a) => ({
+      id: String(a.id || ""),
+      name: String(a.name || ""),
+      category: (a.category || "equity") as InvestmentAsset["category"],
+      amount: Number(a.amount || 0),
+      investedAmount: Number(a.investedAmount !== undefined && a.investedAmount !== null ? a.investedAmount : (a.amount || 0)),
+      quantity: a.quantity !== undefined && a.quantity !== null ? Number(a.quantity) : undefined,
+      buyPrice: a.buyPrice !== undefined && a.buyPrice !== null ? Number(a.buyPrice) : undefined,
+      currentPrice: a.currentPrice !== undefined && a.currentPrice !== null ? Number(a.currentPrice) : undefined,
+      notes: a.notes ? String(a.notes) : undefined,
+      createdAt: a.createdAt !== undefined && a.createdAt !== null ? Number(a.createdAt) : undefined,
+    }));
+
+    return { id: session.uid, assets, updatedAt: Number(data.updatedAt || 0) };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function updatePortfolio(session: Session, assets: InvestmentAsset[]) {
+  const docData = { assets, updatedAt: Date.now() };
+  const params = new URLSearchParams();
+  params.append("updateMask.fieldPaths", "assets");
+  params.append("updateMask.fieldPaths", "updatedAt");
+
+  await fsFetch(session, `${docsRoot(session)}/portfolios/${session.uid}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
 }
