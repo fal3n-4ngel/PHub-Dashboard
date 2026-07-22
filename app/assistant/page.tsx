@@ -163,6 +163,32 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
           </div>
         )}
 
+        {/* Recommended Option: Public Custom GPT */}
+        <div className="rounded-card border border-border-subtle bg-white p-6 shadow-subtle flex flex-col gap-4 border-l-4 border-l-text-primary">
+          <div className="flex items-center justify-between">
+            <span className="inline-block rounded bg-[#eae8e0] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-text-secondary w-fit">
+              RECOMMENDED (EASIEST)
+            </span>
+          </div>
+          <h2 className="text-[17px] font-bold font-serif leading-tight">Use the Official Public Custom GPT</h2>
+          <p className="text-[13px] leading-[1.6] text-text-secondary">
+            Connect to the pre-built, secure **PHub Dashboard Assistant** on the GPT Store. 
+            It uses secure OAuth 2.0 to link directly to your account. No copy-pasting API keys required!
+          </p>
+          <a
+            href="https://chatgpt.com/g/g-6a60b01e38c8819187662d1e42c6bee7-phub-dashboard-public"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${BTN_PRIMARY} px-5 py-3 text-center no-underline inline-block w-fit cursor-pointer`}
+          >
+            Open in ChatGPT
+          </a>
+        </div>
+
+        <div className="border-t border-border-subtle my-2 text-center text-xs font-semibold text-text-secondary tracking-wider uppercase font-mono">
+          — OR SETUP CUSTOM AGENTS / SELF-HOSTED —
+        </div>
+
         {/* Step 1 */}
         <div className={`${BENTO_CARD} flex gap-4`}>
           {stepBadge(1)}
@@ -195,37 +221,61 @@ Always confirm what you logged in one short line. Never invent ids — fetch the
         <div className={`${BENTO_CARD} flex gap-4`}>
           {stepBadge(3)}
           <div className="min-w-0 flex-1">
-            <h2 className="mb-1.5 text-[15px] font-semibold">Authenticate with your token</h2>
+            <h2 className="mb-1.5 text-[15px] font-semibold">Authenticate your Agent</h2>
             <p className="mb-3 text-[13px] leading-[1.7] text-text-secondary">
-              In the action&apos;s <strong>Authentication</strong> settings choose <strong>API Key</strong>, set
-              Auth Type to <strong>Bearer</strong>, and paste your personal token. The API only ever reads or
-              writes data belonging to the account this token was issued for.
+              Configure how the custom assistant authenticates with your dashboard:
             </p>
 
-            {authLoading ? (
-              <p className="text-xs text-text-muted">Checking sign-in…</p>
-            ) : user ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-xs text-text-secondary">
-                  Signed in as <strong>{user.displayName || user.email}</strong>
+            <div className="flex flex-col gap-4">
+              {/* Option A: OAuth */}
+              <div className="border border-border-subtle rounded-lg p-4 bg-bg-primary/20">
+                <h3 className="font-serif text-[13px] font-bold text-text-primary mb-1">Option A: Configure OAuth 2.0 (Recommended)</h3>
+                <p className="text-[11.5px] text-text-secondary leading-relaxed mb-3">
+                  Under Authentication, select <strong>OAuth</strong> and configure these endpoints:
                 </p>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <button onClick={copyPermanentKey} disabled={tokenBusy} className={`${BTN_PRIMARY} px-4 py-2 text-xs`}>
-                    {tokenBusy ? "Generating…" : copied === "perm_key" ? "✓ Permanent Key Copied" : "Copy Permanent API Key (Never Expires)"}
-                  </button>
-                  <button onClick={copyToken} disabled={tokenBusy} className={`${BTN_SECONDARY} px-4 py-2 text-xs`}>
-                    {tokenBusy ? "Generating…" : copied === "token" ? "✓ Token Copied" : "Copy 1-Hour ID Token"}
-                  </button>
-                </div>
+                <table className="w-full text-[11px] font-mono text-text-secondary border-collapse">
+                  <tbody>
+                    <tr>
+                      <td className="pr-3 pb-1 font-bold text-text-primary">Auth URL:</td>
+                      <td className="pb-1 break-all">${origin || SITE_URL}/api/oauth/authorize</td>
+                    </tr>
+                    <tr>
+                      <td className="pr-3 font-bold text-text-primary">Token URL:</td>
+                      <td className="break-all">${origin || SITE_URL}/api/oauth/token</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              <button onClick={signIn} disabled={!authApi} className={`${BTN_PRIMARY} px-4 py-2 text-xs`}>
-                Sign in to get your token
-              </button>
-            )}
 
-            <div className="mt-3.5 rounded-lg border border-[#bbf7d0] bg-[#f0fdf4] px-3.5 py-2.5 text-xs leading-[1.6] text-[#166534]">
-              <strong>Permanent API Key:</strong> Use the Permanent API Key for custom GPTs, Claude Projects, or automated AI Agents. It never expires and auto-refreshes in the background. Treat the key like a password — do not share it publicly.
+              {/* Option B: API Token (Manual fallback) */}
+              <div className="border border-border-subtle rounded-lg p-4 bg-bg-primary/20">
+                <h3 className="font-serif text-[13px] font-bold text-text-primary mb-1">Option B: Permanent API Key (Manual copy-paste)</h3>
+                <p className="text-[11.5px] text-text-secondary leading-relaxed mb-3">
+                  Under Authentication, select <strong>API Key</strong> ➔ <strong>Bearer</strong>, and paste your key.
+                </p>
+                
+                {authLoading ? (
+                  <p className="text-xs text-text-muted">Checking sign-in…</p>
+                ) : user ? (
+                  <div className="flex flex-col gap-2.5">
+                    <p className="text-xs text-text-secondary">
+                      Signed in as <strong>{user.displayName || user.email}</strong>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={copyPermanentKey} disabled={tokenBusy} className={`${BTN_PRIMARY} px-3 py-1.5 text-xs`}>
+                        {tokenBusy ? "Generating…" : copied === "perm_key" ? "✓ Permanent Key Copied" : "Copy Permanent API Key"}
+                      </button>
+                      <button onClick={copyToken} disabled={tokenBusy} className={`${BTN_SECONDARY} px-3 py-1.5 text-xs`}>
+                        {tokenBusy ? "Generating…" : copied === "token" ? "✓ Token Copied" : "Copy 1-Hour ID Token"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={signIn} disabled={!authApi} className={`${BTN_PRIMARY} px-4 py-2 text-xs`}>
+                    Sign in to retrieve API Key
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

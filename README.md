@@ -112,13 +112,22 @@ npm run build && npm run start
 
 ## 🤖 ChatGPT Custom GPT Setup
 
-1. Log into your PHub instance.
-2. Open **Connect to ChatGPT** from the sidebar (or visit `/assistant`).
-3. Copy your fresh access token and schema URL.
-4. In ChatGPT, open **Explore GPTs** → **Create** → **Configure** → **Actions**.
-5. Paste `/api/openapi.json` to import the schema, set Authentication to **API Key (Bearer)**, and paste your token.
+You can converse with your dashboard, track expenses, add movies, and manage your notes directly through ChatGPT!
 
-Now you can track expenses, add to watchlists, and manage your dashboard in conversational text!
+### 1. Using the Official Public Custom GPT (Recommended)
+Simply open the official **[PHub Dashboard Assistant](https://chatgpt.com/g/g-6a60b01e38c8819187662d1e42c6bee7-phub-dashboard-public)**.
+When you send your first message, ChatGPT will prompt you to log in. Click "Authorize" to link your account securely using OAuth 2.0. No copy-pasting API keys required!
+
+### 2. Setting Up Your Own Custom GPT (For Self-Hosters)
+If you are self-hosting your own instance, you can configure your own private Custom GPT:
+1. In ChatGPT, open **Explore GPTs** ➔ **Create** ➔ **Configure** ➔ **Actions**.
+2. **Import Schema:** Import the OpenAPI schema from `https://your-domain.com/api/openapi.json`.
+3. **Configure Authentication:** Select **OAuth**:
+   - **Client ID & Secret:** Set to any dummy string (e.g. `chatgpt-client` / `secret-123`).
+   - **Authorization URL:** `https://your-domain.com/api/oauth/authorize`
+   - **Token URL:** `https://your-domain.com/api/oauth/token`
+   - **Token Exchange Method:** `Default (POST request)`.
+4. Click **Save** and publish the GPT!
 
 ---
 
