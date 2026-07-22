@@ -194,8 +194,7 @@ export default function Dashboard() {
 
   function connectAnilist() {
     const clientId = process.env.NEXT_PUBLIC_ANILIST_CLIENT_ID || "46468";
-    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-    window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&response_type=token&redirect_uri=${redirectUri}`;
+    window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&response_type=token`;
   }
 
   function disconnectAnilist() {

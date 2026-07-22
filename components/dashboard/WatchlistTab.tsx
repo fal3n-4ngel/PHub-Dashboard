@@ -46,11 +46,20 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
   handleLetterboxdImport,
   isImportingLetterboxd,
 }) => {
+  const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "plan_to_watch" | "completed" | "dropped">("all");
+
   const filteredWatchlist = watchlist.filter((item) => {
     if (item.type === "book") return false;
-    if (watchlistFilter === "all") return true;
-    return item.type === watchlistFilter;
+    if (watchlistFilter !== "all" && item.type !== watchlistFilter) return false;
+    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    return true;
   });
+
+  const moviesWatched = watchlist.filter((i) => i.type === "movie" && i.status === "completed").length;
+  const showsWatching = watchlist.filter((i) => i.type === "show" && i.status === "watching").length;
+  const animeCompleted = watchlist.filter((i) => i.type === "anime" && i.status === "completed").length;
+  const episodesWatched = watchlist.filter((i) => i.type === "show" || i.type === "anime").reduce((acc, i) => acc + (i.progress || 0), 0);
+  const planToWatch = watchlist.filter((i) => i.type !== "book" && i.status === "plan_to_watch").length;
 
   return (
     <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -64,6 +73,35 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Import Letterboxd CSV
         </button>
+      </div>
+
+      {/* Media Overview Stat Cards */}
+      <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "16px" }}>
+        <div className="stat-card">
+          <span className="label-mono">Movies Watched</span>
+          <span className="stat-value">{moviesWatched}</span>
+          <span className="stat-subtext">Completed movies</span>
+        </div>
+        <div className="stat-card">
+          <span className="label-mono">Shows Watching</span>
+          <span className="stat-value" style={{ color: "#3b82f6" }}>{showsWatching}</span>
+          <span className="stat-subtext">TV shows in progress</span>
+        </div>
+        <div className="stat-card">
+          <span className="label-mono">Anime Completed</span>
+          <span className="stat-value" style={{ color: "#ec4899" }}>{animeCompleted}</span>
+          <span className="stat-subtext">Finished anime</span>
+        </div>
+        <div className="stat-card">
+          <span className="label-mono">Episodes Logged</span>
+          <span className="stat-value">{episodesWatched}</span>
+          <span className="stat-subtext">Total episodes watched</span>
+        </div>
+        <div className="stat-card">
+          <span className="label-mono">Plan to Watch</span>
+          <span className="stat-value" style={{ color: "#e39282" }}>{planToWatch}</span>
+          <span className="stat-subtext">In watchlist queue</span>
+        </div>
       </div>
 
       {/* Search Media Card */}
@@ -115,32 +153,67 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
         )}
       </div>
 
-      {/* Filter Tabs */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-        <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
-          {(["all", "anime", "movie", "show"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setWatchlistFilter(f)}
-              style={{
-                fontSize: "11px",
-                fontWeight: 600,
-                padding: "5px 12px",
-                backgroundColor: watchlistFilter === f ? "#fff" : "transparent",
-                color: watchlistFilter === f ? "var(--text-primary)" : "var(--text-secondary)",
-                borderRadius: "6px",
-                boxShadow: watchlistFilter === f ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
-                transition: "all 0.2s",
-                border: "none",
-                cursor: "pointer",
-                textTransform: "capitalize",
-              }}
-            >
-              {f === "all" ? "All Media" : f}
-            </button>
-          ))}
+      {/* Filter Tabs & Status Tabs */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {/* Status Tabs */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+          <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
+            {[
+              { id: "all", label: "All Statuses" },
+              { id: "watching", label: "Watching" },
+              { id: "plan_to_watch", label: "Plan to Watch" },
+              { id: "completed", label: "Completed" },
+              { id: "dropped", label: "Dropped" },
+            ].map((st) => (
+              <button
+                key={st.id}
+                onClick={() => setStatusFilter(st.id as any)}
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  padding: "6px 14px",
+                  backgroundColor: statusFilter === st.id ? "#fff" : "transparent",
+                  color: statusFilter === st.id ? "var(--text-primary)" : "var(--text-secondary)",
+                  borderRadius: "6px",
+                  boxShadow: statusFilter === st.id ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+                  transition: "all 0.2s",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {st.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Type Filter Pills */}
+          <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
+            {(["all", "movie", "show", "anime"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setWatchlistFilter(f)}
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  padding: "5px 12px",
+                  backgroundColor: watchlistFilter === f ? "#fff" : "transparent",
+                  color: watchlistFilter === f ? "var(--text-primary)" : "var(--text-secondary)",
+                  borderRadius: "6px",
+                  boxShadow: watchlistFilter === f ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
+                  transition: "all 0.2s",
+                  border: "none",
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                }}
+              >
+                {f === "all" ? "All Types" : f === "movie" ? "Movies" : f === "show" ? "TV Shows" : "Anime"}
+              </button>
+            ))}
+          </div>
         </div>
-        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{filteredWatchlist.length} items</span>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{filteredWatchlist.length} items</span>
+        </div>
       </div>
 
       {/* Media Grid */}
