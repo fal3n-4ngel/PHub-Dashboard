@@ -52,18 +52,19 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
   setInvSuggestions,
   selectSuggestion,
 }) => {
-  const totalValue = investments.reduce((acc, a) => acc + (a.amount || 0), 0);
-  const totalInvested = investments.reduce((acc, a) => acc + (a.investedAmount || a.amount || 0), 0);
+  const safeInvestments = Array.isArray(investments) ? investments : [];
+  const totalValue = safeInvestments.reduce((acc, a) => acc + (a.amount || 0), 0);
+  const totalInvested = safeInvestments.reduce((acc, a) => acc + (a.investedAmount || a.amount || 0), 0);
   const totalProfit = totalValue - totalInvested;
   const profitPct = totalInvested > 0 ? (totalProfit / totalInvested) * 100 : 0;
 
-  const monthlySip = investments
+  const monthlySip = safeInvestments
     .filter((a) => a.category === "sip")
     .reduce((acc, a) => acc + (a.amount || 0), 0);
 
   // Category breakdown for pie chart
   const catTotals: Record<string, number> = {};
-  investments.forEach((a) => {
+  safeInvestments.forEach((a) => {
     catTotals[a.category] = (catTotals[a.category] || 0) + (a.amount || 0);
   });
 
@@ -115,7 +116,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
       {/* Add Investment Form */}
       <div className="bento-card" style={{ position: "relative" }}>
         <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Add Asset / SIP / Crypto</span>
-        <form onSubmit={addInvestment} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1.2fr auto", gap: "10px", alignItems: "end" }}>
+        <form onSubmit={addInvestment} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", alignItems: "end" }}>
           <div style={{ position: "relative" }}>
             <input
               type="text"
@@ -123,6 +124,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
               value={invName}
               onChange={(e) => setInvName(e.target.value)}
               required
+              style={{ width: "100%" }}
             />
             {invSuggestions.length > 0 && (
               <div
@@ -155,7 +157,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
             )}
           </div>
 
-          <select value={invCategory} onChange={(e) => setInvCategory(e.target.value as InvestmentCategory)}>
+          <select value={invCategory} onChange={(e) => setInvCategory(e.target.value as InvestmentCategory)} style={{ width: "100%" }}>
             <option value="equity">Equity / Stock</option>
             <option value="crypto">Crypto</option>
             <option value="mutual_fund">Mutual Fund</option>
@@ -171,6 +173,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
             value={invQuantity}
             onChange={(e) => setInvQuantity(e.target.value)}
             step="any"
+            style={{ width: "100%" }}
           />
 
           <input
@@ -180,6 +183,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
             onChange={(e) => setInvAmount(e.target.value)}
             step="any"
             required
+            style={{ width: "100%" }}
           />
 
           <input
@@ -187,19 +191,20 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
             placeholder="Notes (optional)"
             value={invNotes}
             onChange={(e) => setInvNotes(e.target.value)}
+            style={{ width: "100%" }}
           />
 
-          <button type="submit" disabled={isAddingAsset} className="btn-primary">
+          <button type="submit" disabled={isAddingAsset} className="btn-primary" style={{ whiteSpace: "nowrap", width: "100%" }}>
             {isAddingAsset ? "Adding..." : "+ Add Asset"}
           </button>
         </form>
       </div>
 
       {/* Asset Cards & Allocation Split */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "24px", alignItems: "start" }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "24px", alignItems: "start" }}>
         {/* Asset Cards Grid */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {investments.map((asset) => {
+          {safeInvestments.map((asset) => {
             const currentVal = asset.amount || 0;
             const investedVal = asset.investedAmount || asset.amount || 0;
             const assetProfit = currentVal - investedVal;
@@ -238,7 +243,7 @@ export const InvestmentsTab: React.FC<InvestmentsTabProps> = ({
               </div>
             );
           })}
-          {investments.length === 0 && (
+          {safeInvestments.length === 0 && (
             <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "32px" }}>
               {isFetchingInvestments ? "Loading portfolio..." : "No investments added yet."}
             </p>

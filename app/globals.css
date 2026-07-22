@@ -240,6 +240,43 @@ button {
   display: none !important;
 }
 
+/* ─── Ledger Table Styling ─── */
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.ledger-table th {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-card);
+}
+
+.ledger-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.ledger-table tbody tr:hover {
+  background-color: var(--bg-secondary);
+}
+
+@media (max-width: 900px) {
+  .responsive-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 .mobile-header {
   display: none;
 }

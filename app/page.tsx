@@ -369,7 +369,11 @@ export default function Dashboard() {
     setIsFetchingInvestments(true);
     try {
       const res = await fetch("/api/portfolio", { headers: getHeaders() });
-      if (res.ok) setInvestments(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data && Array.isArray(data.assets) ? data.assets : []);
+        setInvestments(list);
+      }
     } catch (err) {
       console.error(err);
     } finally {
