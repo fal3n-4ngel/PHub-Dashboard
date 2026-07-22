@@ -196,6 +196,37 @@ export default function AdminPage() {
     }
   };
 
+  const [migrationLoading, setMigrationLoading] = useState(false);
+
+  // Encryption migration handler
+  const runEncryptionMigration = async () => {
+    if (!user) return;
+    setMigrationLoading(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch("/api/admin/migrate-encryption", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.idToken}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStatusMessage({
+          text: `Firestore Encryption Migration complete! Encrypted and updated ${data.migratedCount} records.`,
+          type: "success",
+        });
+      } else {
+        throw new Error(data.error || "Failed to run migration");
+      }
+    } catch (err: any) {
+      setStatusMessage({ text: err.message || "Migration failed.", type: "error" });
+    } finally {
+      setMigrationLoading(false);
+    }
+  };
+
   /* ─── Loading State ─── */
   if (authLoading) {
     return (
@@ -420,19 +451,29 @@ export default function AdminPage() {
             {/* Cache Controls Card */}
             <div className="rounded-card border border-border-subtle bg-white p-6 shadow-subtle flex flex-col gap-4">
               <h3 className="font-serif text-base font-bold text-text-primary flex items-center gap-2 border-b border-border-subtle pb-2">
-                <RefreshCw className="h-4.5 w-4.5" /> Cache Operations
+                <RefreshCw className="h-4.5 w-4.5" /> Database & Cache Operations
               </h3>
               <p className="text-xs text-text-secondary leading-relaxed">
-                Clearing the Redis database forces Next.js backend API routes to query Firestore directly on their next request, resetting cache states.
+                Management commands for database encryption and cache states.
               </p>
 
-              <button
-                disabled={flushLoading}
-                onClick={flushCache}
-                className="mt-2 w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-text-primary bg-text-primary text-xs font-semibold text-white py-3 transition-all hover:bg-[#2e2d27] disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" /> {flushLoading ? "Flushing Cache..." : "Flush Redis Cache"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  disabled={flushLoading}
+                  onClick={flushCache}
+                  className="w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-text-primary bg-text-primary text-xs font-semibold text-white py-3 transition-all hover:bg-[#2e2d27] disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" /> {flushLoading ? "Flushing Cache..." : "Flush Redis Cache"}
+                </button>
+
+                <button
+                  disabled={migrationLoading}
+                  onClick={runEncryptionMigration}
+                  className="w-full flex items-center justify-center gap-2 cursor-pointer rounded-md border border-border-subtle bg-transparent text-xs font-semibold text-text-primary py-3 transition-all hover:bg-bg-primary disabled:opacity-50"
+                >
+                  <Shield className="h-4.5 w-4.5" /> {migrationLoading ? "Encrypting Records..." : "Encrypt Existing Expenses"}
+                </button>
+              </div>
             </div>
 
             {/* Quick Server Info Card */}
