@@ -94,6 +94,7 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchingMedia, setIsSearchingMedia] = useState(false);
   const [watchlistFilter, setWatchlistFilter] = useState<"all" | "anime" | "movie" | "show">("all");
+  const [isEnrichingPosters, setIsEnrichingPosters] = useState(false);
 
   // Letterboxd CSV Import Modal
   const [showLetterboxdModal, setShowLetterboxdModal] = useState(false);
@@ -458,6 +459,98 @@ export default function Dashboard() {
     } finally {
       setIsSyncingTrakt(false);
     }
+  };
+
+  const enrichMissingPosters = async () => {
+    const missing = watchlist.filter(
+      (w) => !w.coverImage && (w.type === "movie" || w.type === "show")
+    );
+    if (missing.length === 0) {
+      triggerAlert("All Good", "All your movies and shows already have cover images!", "success");
+      return;
+    }
+
+    triggerConfirm(
+      "Fetch Missing Posters",
+      `Found ${missing.length} items with missing cover art. Fetch them now from OMDb/TVMaze?`,
+      async () => {
+        setIsEnrichingPosters(true);
+        let successCount = 0;
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
+          for (const item of missing) {
+            let imdbId = null;
+            
+            // 1. Try to resolve IMDb ID from Trakt if available
+            if (item.traktId) {
+              try {
+                const details = await traktRequest(user?.idToken, `${item.type}s/${item.traktId}`);
+                imdbId = details?.ids?.imdb || null;
+              } catch (e) {
+                console.error("Trakt details fetch error:", e);
+              }
+            }
+
+            // 2. Fetch from OMDb
+            let coverImage = null;
+            if (apiKey) {
+              try {
+                const searchUrl = imdbId 
+                  ? `https://www.omdbapi.com/?i=${imdbId}&apikey=${apiKey}`
+                  : `https://www.omdbapi.com/?t=${encodeURIComponent(item.title)}&y=${item.year || ""}&apikey=${apiKey}`;
+                const omdbRes = await fetch(searchUrl);
+                if (omdbRes.ok) {
+                  const omdbData = await omdbRes.json();
+                  coverImage = omdbData.Poster && omdbData.Poster !== "N/A" ? omdbData.Poster : null;
+                }
+              } catch (e) {
+                console.error("OMDb search error:", e);
+              }
+            }
+
+            // 3. Fallback to TVMaze for TV shows
+            if (!coverImage && item.type === "show") {
+              try {
+                const searchUrl = imdbId
+                  ? `https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`
+                  : `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(item.title)}`;
+                const tvmazeRes = await fetch(searchUrl);
+                if (tvmazeRes.ok) {
+                  const tvmazeData = await tvmazeRes.json();
+                  coverImage = tvmazeData.image?.medium || null;
+                }
+              } catch (e) {
+                console.error("TVMaze fallback error:", e);
+              }
+            }
+
+            // 4. Update the item in Firestore if a cover was found
+            if (coverImage) {
+              const res = await fetch(`/api/watchlist/${item.id}`, {
+                method: "PATCH",
+                headers: getHeaders(),
+                body: JSON.stringify({ coverImage }),
+              });
+              if (res.ok) {
+                successCount++;
+              }
+            }
+          }
+
+          if (successCount > 0) {
+            await fetchWatchlist();
+            triggerAlert("Enrichment Complete", `Successfully updated ${successCount} items with cover art!`, "success");
+          } else {
+            triggerAlert("Enrichment Complete", "Could not find any posters for the missing items.", "info");
+          }
+        } catch (err: any) {
+          console.error("Enrichment error:", err);
+          triggerAlert("Enrichment Error", err.message || "Failed to enrich posters.", "danger");
+        } finally {
+          setIsEnrichingPosters(false);
+        }
+      }
+    );
   };
 
   /* ─── Handle OAuth Tokens & Firebase Auth ─── */
@@ -1293,6 +1386,8 @@ export default function Dashboard() {
             disconnectTrakt={disconnectTrakt}
             syncTrakt={syncTrakt}
             isSyncingTrakt={isSyncingTrakt}
+            enrichMissingPosters={enrichMissingPosters}
+            isEnrichingPosters={isEnrichingPosters}
           />
         )}
 

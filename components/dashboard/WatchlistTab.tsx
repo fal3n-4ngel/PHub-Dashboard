@@ -32,6 +32,8 @@ interface WatchlistTabProps {
   disconnectTrakt?: () => void;
   syncTrakt?: () => void;
   isSyncingTrakt?: boolean;
+  enrichMissingPosters?: () => void;
+  isEnrichingPosters?: boolean;
 }
 
 const STAT_CARD = "flex flex-col gap-1 rounded-card border border-border-subtle bg-bg-card p-5 shadow-subtle";
@@ -83,6 +85,8 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
   disconnectTrakt,
   syncTrakt,
   isSyncingTrakt,
+  enrichMissingPosters,
+  isEnrichingPosters = false,
 }) => {
   const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "plan_to_watch" | "completed">("all");
   const [activeCategoryTab, setActiveCategoryTab] = React.useState<"all_media" | "anime">("all_media");
@@ -322,6 +326,17 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
 
             {/* Right side status pills & dropdown */}
             <div className="flex flex-wrap items-center gap-2.5">
+              {watchlist.some((w) => !w.coverImage && (w.type === "movie" || w.type === "show")) && enrichMissingPosters && (
+                <button
+                  onClick={enrichMissingPosters}
+                  disabled={isEnrichingPosters}
+                  className="rounded-md border border-border-subtle bg-bg-card hover:bg-bg-secondary text-[11px] font-semibold text-text-primary px-3 py-1.5 flex items-center gap-1 cursor-pointer transition-all duration-150 disabled:opacity-50"
+                  title="Scan for items with missing cover art and fetch them from OMDb/TVMaze"
+                >
+                  ✨ {isEnrichingPosters ? "Fetching..." : "Fetch Posters"}
+                </button>
+              )}
+
               {activeCategoryTab === "all_media" && (
                 <select
                   value={watchlistFilter}
