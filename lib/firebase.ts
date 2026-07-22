@@ -558,8 +558,20 @@ export async function bulkSyncWatchlist(
     }
 
     if (match) {
+      const totalEp = entry.totalEpisodes !== undefined && entry.totalEpisodes !== null
+        ? Number(entry.totalEpisodes)
+        : (match.item.totalEpisodes !== undefined && match.item.totalEpisodes !== null ? Number(match.item.totalEpisodes) : null);
+      const prog = entry.progress !== undefined && entry.progress !== null
+        ? Number(entry.progress)
+        : (match.item.progress !== undefined && match.item.progress !== null ? Number(match.item.progress) : 0);
+
+      let finalStatus = entry.status;
+      if (totalEp && totalEp > 0 && prog >= totalEp) {
+        finalStatus = "completed";
+      }
+
       const changed =
-        match.item.status !== entry.status ||
+        match.item.status !== finalStatus ||
         Number(match.item.progress || 0) !== Number(entry.progress || 0) ||
         Number(match.item.rating || 0) !== Number(entry.rating || 0) ||
         (entry.coverImage && match.item.coverImage !== entry.coverImage);
@@ -570,7 +582,7 @@ export async function bulkSyncWatchlist(
       }
 
       patches[match.id] = {
-        status: entry.status,
+        status: finalStatus,
         progress: entry.progress,
         rating: entry.rating,
         ...(entry.coverImage ? { coverImage: entry.coverImage } : {}),
@@ -579,10 +591,18 @@ export async function bulkSyncWatchlist(
       updated++;
     } else {
       const id = randomUUID();
+      const totalEp = entry.totalEpisodes !== undefined && entry.totalEpisodes !== null ? Number(entry.totalEpisodes) : null;
+      const prog = entry.progress !== undefined && entry.progress !== null ? Number(entry.progress) : 0;
+      
+      let finalStatus = entry.status;
+      if (totalEp && totalEp > 0 && prog >= totalEp) {
+        finalStatus = "completed";
+      }
+
       patches[id] = {
         title: entry.title,
         type: entry.type,
-        status: entry.status,
+        status: finalStatus,
         progress: entry.progress,
         totalEpisodes: entry.totalEpisodes,
         rating: entry.rating,

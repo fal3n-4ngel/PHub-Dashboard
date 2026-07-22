@@ -354,14 +354,39 @@ export default function Dashboard() {
       if (Array.isArray(shows)) {
         for (const item of shows) {
           if (!item?.show) continue;
+          
+          let progress = 0;
+          if (Array.isArray(item.seasons)) {
+            for (const season of item.seasons) {
+              if (Array.isArray(season.episodes)) {
+                progress += season.episodes.length;
+              }
+            }
+          }
+          if (progress === 0 && item.plays) {
+            progress = item.plays;
+          }
+
+          const existing = watchlist.find(
+            (w) =>
+              (w.traktId && w.traktId === item.show.ids?.trakt) ||
+              (w.title.toLowerCase().trim() === item.show.title.toLowerCase().trim() && w.type === "show")
+          );
+
+          const totalEpisodes = existing?.totalEpisodes || null;
+          let status: WatchlistItem["status"] = "watching";
+          if (totalEpisodes && totalEpisodes > 0 && progress >= totalEpisodes) {
+            status = "completed";
+          }
+
           entries.push({
             title: item.show.title,
             type: "show",
-            status: "watching",
-            progress: item.plays || 1,
-            totalEpisodes: null,
+            status,
+            progress,
+            totalEpisodes,
             rating: item.rating ? Number(item.rating) : null,
-            coverImage: null,
+            coverImage: existing?.coverImage || null,
             year: item.show.year || null,
             traktId: item.show.ids?.trakt,
           });
@@ -640,13 +665,26 @@ export default function Dashboard() {
 
   /* ─── Watchlist Actions ─── */
   const updateWatchItem = async (item: WatchlistItem, updates: Partial<WatchlistItem>) => {
+    const nextUpdates = { ...updates };
+    if (nextUpdates.progress !== undefined) {
+      const total = nextUpdates.totalEpisodes !== undefined && nextUpdates.totalEpisodes !== null
+        ? Number(nextUpdates.totalEpisodes)
+        : (item.totalEpisodes !== undefined && item.totalEpisodes !== null ? Number(item.totalEpisodes) : null);
+      
+      if (total && total > 0 && Number(nextUpdates.progress) >= total) {
+        nextUpdates.status = "completed";
+      } else if (total && total > 0 && Number(nextUpdates.progress) < total && item.status === "completed" && nextUpdates.status === undefined) {
+        nextUpdates.status = "watching";
+      }
+    }
+
     const res = await fetch(`/api/watchlist/${item.id}`, {
       method: "PATCH",
       headers: getHeaders(),
-      body: JSON.stringify(updates),
+      body: JSON.stringify(nextUpdates),
     });
     if (res.ok) {
-      setWatchlist((prev) => prev.map((w) => (w.id === item.id ? { ...w, ...updates, updatedAt: Date.now() } : w)));
+      setWatchlist((prev) => prev.map((w) => (w.id === item.id ? { ...w, ...nextUpdates, updatedAt: Date.now() } : w)));
     }
   };
 
@@ -1023,8 +1061,8 @@ export default function Dashboard() {
   /* ─── Sign In Screen ─── */
   if (authLoading) {
     return (
-      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-body)" }}>
-        <p style={{ fontSize: "14px", color: "var(--text-muted)" }}>Loading PHub Dashboard…</p>
+      <div className="flex h-screen items-center justify-center bg-bg-primary">
+        <p className="text-sm text-text-muted">Loading PHub Dashboard…</p>
       </div>
     );
   }
@@ -1044,8 +1082,7 @@ export default function Dashboard() {
 
   /* ─── Main App Render ─── */
   return (
-    <div className="app-container">
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="flex min-h-screen max-md:flex-col max-md:overflow-x-hidden">
 
       {/* Mobile Header & Bottom Navigation */}
       <MobileHeader
@@ -1087,7 +1124,7 @@ export default function Dashboard() {
       />
 
       {/* Main Canvas */}
-      <main className="main-content">
+      <main className="ml-[250px] flex max-w-[1300px] flex-1 flex-col gap-7 px-10 py-8 min-[769px]:max-[1100px]:ml-[210px] min-[769px]:max-[1100px]:gap-[22px] min-[769px]:max-[1100px]:px-7 min-[769px]:max-[1100px]:py-6 max-md:ml-0 max-md:w-full max-md:max-w-full max-md:gap-3.5 max-md:p-3.5 max-md:pb-[calc(68px+env(safe-area-inset-bottom))]">
         {/* Expenses & Subscriptions */}
         {activeTab === "expenses" && (
           <>
@@ -1265,6 +1302,42 @@ export default function Dashboard() {
         setShowOnboarding={setShowOnboarding}
         showInvestmentsTab={showInvestmentsTab}
       />
+
+      {/* Letterboxd Import Modal */}
+      {showLetterboxdModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="flex w-[450px] flex-col gap-4 rounded-card border border-border-subtle bg-white p-6 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_10px_10px_-5px_rgba(0,0,0,0.04)]">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-semibold tracking-[0.8px] text-text-secondary uppercase">Import Letterboxd CSV</span>
+              <button onClick={() => setShowLetterboxdModal(false)} className="cursor-pointer border-none bg-transparent p-1 text-base">✕</button>
+            </div>
+            <p className="text-xs leading-[1.4] text-text-muted">
+              Paste the contents of your Letterboxd <code>watchlist.csv</code> or <code>watched.csv</code> file below. We will parse it and add the movies to your library automatically.
+            </p>
+            <textarea
+              rows={8}
+              placeholder={`Date,Name,Year,Letterboxd URI
+2026-07-22,Interstellar,2014,https://boxd.it/...
+2026-07-22,The Prestige,2006,https://boxd.it/...`}
+              value={letterboxdCsv}
+              onChange={(e) => setLetterboxdCsv(e.target.value)}
+              className="w-full resize-y rounded-md border border-border-subtle bg-bg-primary p-2.5 font-mono text-[11px] outline-none"
+            />
+            <div className="flex justify-end gap-2.5">
+              <button onClick={() => setShowLetterboxdModal(false)} className="h-9 cursor-pointer rounded-md border border-border-subtle bg-transparent px-4 text-xs font-medium text-text-primary transition-all duration-200 hover:bg-bg-primary">
+                Cancel
+              </button>
+              <button
+                onClick={handleLetterboxdImport}
+                disabled={isImportingLetterboxd || !letterboxdCsv.trim()}
+                className="h-9 cursor-pointer rounded-md border border-text-primary bg-text-primary px-5 text-xs font-medium text-white transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isImportingLetterboxd ? "Importing..." : "Import Movies"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

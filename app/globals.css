@@ -1,6 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,600&display=swap');
+@import "tailwindcss";
 
+/* Mirrors the :root tokens below into Tailwind's theme namespace (bg-bg-primary,
+   text-text-primary, rounded-card, ...) without renaming the existing vars that
+   inline styles across the app still read directly. */
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-card: var(--bg-card);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-hover: var(--border-hover);
+  --color-accent-blue: var(--accent-blue);
 
+  --radius-card: 12px;
+  --radius-button: 8px;
+
+  --shadow-subtle: 0 4px 20px -2px rgba(110, 108, 100, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(28, 27, 24, 0.06);
+
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+  --font-serif: 'Playfair Display', serif;
+}
+
+/* Wrapped in Tailwind's "base" layer so utility classes (which live in the
+   higher-priority "utilities" layer) can always override these base element
+   resets — unlayered CSS otherwise beats any @layer'd CSS regardless of
+   specificity, which was silently overriding Tailwind's button/input/etc.
+   utilities. */
+@layer base {
 :root {
   --bg-primary: #f4f3ec; /* warm neutral paper canvas background */
   --bg-secondary: #eae8e0; /* slightly darker neutral background */
@@ -33,99 +64,6 @@ body {
   min-height: 100vh;
 }
 
-/* Sidebar structure */
-.app-container {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 250px;
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
-  padding: 24px 16px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 100;
-}
-
-.main-content {
-  margin-left: 250px;
-  flex: 1;
-  padding: 32px 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  max-width: 1300px;
-}
-
-/* Nav links */
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: var(--radius-button);
-  transition: all 0.2s ease;
-  margin-bottom: 4px;
-  cursor: pointer;
-}
-
-.nav-link:hover {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.nav-link.active {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-/* Monospace label uppercase */
-.label-mono {
-  font-family: monospace;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-/* Stat Blocks */
-.stat-card {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 20px;
-  box-shadow: var(--shadow-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-}
-
-.stat-subtext {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
 /* Form inputs & dropdowns */
 input, select, textarea {
   font-family: var(--font-body);
@@ -144,15 +82,6 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--shadow-focus);
 }
 
-/* Dashboard Cards */
-.bento-card {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 24px;
-  box-shadow: var(--shadow-subtle);
-}
-
 /* Buttons */
 button {
   font-family: var(--font-body);
@@ -165,78 +94,11 @@ button {
   border: none;
 }
 
-.btn-primary {
-  background-color: var(--text-primary);
-  color: #ffffff;
-  border: 1px solid var(--text-primary);
-}
-
-.btn-primary:hover {
-  background-color: #2e2d27;
-  border-color: #2e2d27;
-}
-
-.btn-secondary {
-  background-color: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-}
-
-.btn-secondary:hover {
-  background-color: var(--bg-primary);
-}
-
-.sidebar-action-btn {
-  background: transparent !important;
-  border: none !important;
-  padding: 4px !important;
-  width: 24px !important;
-  height: 24px !important;
-  border-radius: 4px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  color: var(--text-muted) !important;
-  cursor: pointer !important;
-  transition: all 0.2s ease !important;
-}
-
-.sidebar-action-btn:hover {
-  background-color: var(--bg-primary) !important;
-  color: var(--text-primary) !important;
-}
-
-/* Profiles */
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 16px;
-}
-
-.profile-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: var(--text-primary);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
-}
-
-/* Animations */
+/* Referenced via Tailwind's arbitrary animate-[fadeIn_...] utility across the
+   dashboard tab components. */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Scrollbars */
@@ -254,238 +116,4 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-hover);
 }
-
-/* ─── Mobile & responsive utilities ─── */
-.mobile-only {
-  display: none !important;
-}
-
-/* ─── Ledger Table Styling ─── */
-.ledger-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.ledger-table th {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  background-color: var(--bg-card);
-}
-
-.ledger-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 13px;
-  color: var(--text-primary);
-  vertical-align: middle;
-}
-
-.ledger-table tbody tr:hover {
-  background-color: var(--bg-secondary);
-}
-
-@media (max-width: 900px) {
-  .responsive-grid {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-.mobile-header {
-  display: none;
-}
-
-.mobile-bottom-nav {
-  display: none;
-}
-
-/* ─── Tablet (769px – 1100px) ─── */
-@media (min-width: 769px) and (max-width: 1100px) {
-  .sidebar {
-    width: 210px;
-  }
-
-  .main-content {
-    margin-left: 210px;
-    padding: 24px 28px;
-    gap: 22px;
-  }
-}
-
-/* ─── Mobile (≤768px) ─── */
-@media (max-width: 768px) {
-  .mobile-only {
-    display: flex !important;
-  }
-
-  .app-container {
-    flex-direction: column;
-    overflow-x: hidden;
-  }
-
-  .sidebar {
-    display: none !important;
-  }
-
-  .main-content {
-    margin-left: 0;
-    padding: 14px;
-    padding-bottom: calc(68px + env(safe-area-inset-bottom));
-    gap: 14px;
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .mobile-header {
-    display: flex !important;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background-color: var(--bg-card);
-    border-bottom: 1px solid var(--border-subtle);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    min-height: 52px;
-  }
-
-  .mobile-bottom-nav {
-    display: flex !important;
-    justify-content: space-around;
-    align-items: stretch;
-    background-color: var(--bg-card);
-    border-top: 1px solid var(--border-subtle);
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    min-height: 60px;
-    padding-bottom: env(safe-area-inset-bottom);
-    z-index: 1000;
-  }
-
-  .mobile-nav-link {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    font-size: 10px;
-    color: var(--text-muted);
-    font-weight: 500;
-    flex: 1;
-    cursor: pointer;
-    transition: color 0.15s ease;
-    position: relative;
-    padding: 8px 6px 6px;
-    min-height: 44px;
-    text-decoration: none;
-  }
-
-  .mobile-nav-link.active {
-    color: var(--text-primary);
-    font-weight: 700;
-  }
-
-  .mobile-nav-link.active::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 28px;
-    height: 2px;
-    background-color: var(--text-primary);
-    border-radius: 0 0 3px 3px;
-  }
-
-  /* Hide desktop main-content header on mobile */
-  .main-content > header {
-    display: none !important;
-  }
-
-  /* Responsive grid */
-  .responsive-grid {
-    grid-template-columns: 1fr !important;
-    gap: 14px !important;
-  }
-
-  .responsive-grid > * {
-    min-width: 0;
-  }
-
-  /* Stat cards */
-  .responsive-stats {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
-  }
-
-  .stat-card {
-    padding: 14px !important;
-  }
-
-  .stat-value {
-    font-size: 20px !important;
-  }
-
-  /* Bento cards */
-  .bento-card {
-    padding: 14px !important;
-  }
-
-  /* Charts */
-  .chart-container {
-    height: 170px !important;
-    padding-bottom: 4px !important;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .chart-container::-webkit-scrollbar {
-    display: none;
-  }
-
-  .chart-bar-container {
-    height: 130px !important;
-  }
-
-  /* Horizontal-scroll strip (filter bars, control rows) */
-  .mobile-scroll-x {
-    overflow-x: auto !important;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    flex-wrap: nowrap !important;
-    justify-content: flex-start !important;
-  }
-
-  .mobile-scroll-x::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-/* ─── Extra-small phones (≤380px) ─── */
-@media (max-width: 380px) {
-  .main-content {
-    padding: 10px !important;
-    gap: 10px !important;
-    padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important;
-  }
-
-  .stat-value {
-    font-size: 17px !important;
-  }
-
-  .bento-card {
-    padding: 12px !important;
-  }
-
-  .stat-card {
-    padding: 12px !important;
-  }
-}
+} /* end @layer base */

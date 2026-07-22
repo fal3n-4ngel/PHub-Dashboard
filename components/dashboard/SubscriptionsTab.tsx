@@ -21,6 +21,14 @@ interface SubscriptionsTabProps {
   isFetchingSubscriptions: boolean;
 }
 
+const STAT_CARD = "flex flex-col gap-1 rounded-card border border-border-subtle bg-bg-card p-5 shadow-subtle";
+const LABEL_MONO = "font-mono text-[10px] font-semibold tracking-[0.8px] text-text-secondary uppercase";
+const STAT_VALUE = "text-[28px] font-bold tracking-[-0.5px] text-text-primary";
+const STAT_SUBTEXT = "mt-1 text-[11px] text-text-muted";
+const BENTO_CARD = "rounded-card border border-border-subtle bg-bg-card p-6 shadow-subtle";
+const BTN_PRIMARY = "rounded-md border border-text-primary bg-text-primary px-4 py-2 text-[13px] font-medium text-white transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27]";
+const INPUT_CLASS = "rounded-lg border border-border-subtle bg-bg-card px-3 py-2 text-[13px] text-text-primary outline-none transition-all duration-200 focus:border-border-hover focus:shadow-focus";
+
 export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
   subscriptions,
   currency,
@@ -40,38 +48,38 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
   isFetchingSubscriptions,
 }) => {
   return (
-    <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div className="flex flex-col gap-6 animate-[fadeIn_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
       {/* Stat row */}
-      <div className="responsive-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
-        <div className="stat-card">
-          <span className="label-mono">Monthly Burn</span>
-          <span className="stat-value" style={{ color: "var(--accent-expense)" }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 max-md:grid-cols-2 max-md:gap-2.5">
+        <div className={STAT_CARD}>
+          <span className={LABEL_MONO}>Monthly Burn</span>
+          <span className={STAT_VALUE}>
             {currency}{subscriptions.reduce((acc, sub) => acc + (sub.billingCycle === "yearly" ? sub.cost / 12 : sub.cost), 0).toFixed(0)}
           </span>
-          <span className="stat-subtext">per month (normalised)</span>
+          <span className={STAT_SUBTEXT}>per month (normalised)</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">Yearly Total</span>
-          <span className="stat-value">
+        <div className={STAT_CARD}>
+          <span className={LABEL_MONO}>Yearly Total</span>
+          <span className={STAT_VALUE}>
             {currency}{subscriptions.reduce((acc, sub) => acc + (sub.billingCycle === "yearly" ? sub.cost : sub.cost * 12), 0).toFixed(0)}
           </span>
-          <span className="stat-subtext">annual commitment</span>
+          <span className={STAT_SUBTEXT}>annual commitment</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">Active Plans</span>
-          <span className="stat-value">{subscriptions.length}</span>
-          <span className="stat-subtext">subscriptions tracked</span>
+        <div className={STAT_CARD}>
+          <span className={LABEL_MONO}>Active Plans</span>
+          <span className={STAT_VALUE}>{subscriptions.length}</span>
+          <span className={STAT_SUBTEXT}>subscriptions tracked</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">Next Due</span>
-          <span className="stat-value" style={{ fontSize: "18px", marginTop: "8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div className={STAT_CARD}>
+          <span className={LABEL_MONO}>Next Due</span>
+          <span className={`${STAT_VALUE} mt-2 overflow-hidden text-ellipsis whitespace-nowrap text-lg`}>
             {(() => {
               if (subscriptions.length === 0) return "—";
               const next = subscriptions.slice().sort((a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime())[0];
               return next?.name ?? "—";
             })()}
           </span>
-          <span className="stat-subtext">
+          <span className={STAT_SUBTEXT}>
             {(() => {
               if (subscriptions.length === 0) return "";
               const next = subscriptions.slice().sort((a, b) => new Date(a.nextBillingDate).getTime() - new Date(b.nextBillingDate).getTime())[0];
@@ -84,40 +92,40 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
       </div>
 
       {/* Add Form */}
-      <div className="bento-card">
-        <span className="label-mono" style={{ marginBottom: "14px", display: "block" }}>Add Subscription</span>
-        <form onSubmit={addSubscription} style={{ display: "grid", gridTemplateColumns: "1fr 70px 1fr 1fr 1fr auto", gap: "9px", alignItems: "end" }}>
-          <input type="text" placeholder="Name (e.g. Netflix)" value={subName} onChange={(e) => setSubName(e.target.value)} required />
-          <input type="text" placeholder="🍿" value={subIcon} onChange={(e) => setSubIcon(e.target.value)} style={{ textAlign: "center" }} />
-          <input type="number" placeholder={`Amount (${currency})`} value={subCost} onChange={(e) => setSubCost(e.target.value)} required step="0.01" />
-          <select value={subCycle} onChange={(e) => setSubCycle(e.target.value as "monthly" | "yearly")}>
+      <div className={BENTO_CARD}>
+        <span className={`${LABEL_MONO} mb-3.5 block`}>Add Subscription</span>
+        <form onSubmit={addSubscription} className="grid grid-cols-[1fr_70px_1fr_1fr_1fr_auto] items-end gap-[9px]">
+          <input type="text" placeholder="Name (e.g. Netflix)" value={subName} onChange={(e) => setSubName(e.target.value)} required className={INPUT_CLASS} />
+          <input type="text" placeholder="🍿" value={subIcon} onChange={(e) => setSubIcon(e.target.value)} className={`${INPUT_CLASS} text-center`} />
+          <input type="number" placeholder={`Amount (${currency})`} value={subCost} onChange={(e) => setSubCost(e.target.value)} required step="0.01" className={INPUT_CLASS} />
+          <select value={subCycle} onChange={(e) => setSubCycle(e.target.value as "monthly" | "yearly")} className={`${INPUT_CLASS} cursor-pointer`}>
             <option value="monthly">Monthly</option>
             <option value="yearly">Yearly</option>
           </select>
-          <input type="date" value={subNextDate} onChange={(e) => setSubNextDate(e.target.value)} required />
-          <button type="submit" disabled={isAddingSub} className="btn-primary" style={{ whiteSpace: "nowrap" }}>
+          <input type="date" value={subNextDate} onChange={(e) => setSubNextDate(e.target.value)} required className={INPUT_CLASS} />
+          <button type="submit" disabled={isAddingSub} className={`${BTN_PRIMARY} whitespace-nowrap`}>
             {isAddingSub ? "Adding..." : "+ Add"}
           </button>
         </form>
       </div>
 
       {/* List + Donut Chart */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "24px", alignItems: "start" }}>
+      <div className="grid grid-cols-[1fr_300px] items-start gap-6 max-md:grid-cols-1">
         {/* Subscriptions list */}
-        <div className="bento-card" style={{ padding: "24px" }}>
-          <span className="label-mono" style={{ marginBottom: "16px", display: "block" }}>
+        <div className={BENTO_CARD}>
+          <span className={`${LABEL_MONO} mb-4 block`}>
             Active Subscriptions
-            <span style={{ marginLeft: "8px", fontSize: "11px", fontWeight: 500, color: "var(--text-muted)", backgroundColor: "var(--bg-secondary)", padding: "2px 7px", borderRadius: "99px" }}>
+            <span className="ml-2 rounded-full bg-bg-secondary px-[7px] py-0.5 text-[11px] font-medium text-text-muted">
               {subscriptions.length}
             </span>
           </span>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div className="flex flex-col gap-2">
             {subscriptions.length === 0 && isFetchingSubscriptions && (
-              <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>Loading…</p>
+              <p className="p-5 text-center text-[13px] text-text-muted">Loading…</p>
             )}
             {subscriptions.length === 0 && !isFetchingSubscriptions && (
-              <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", padding: "20px" }}>No subscriptions added yet.</p>
+              <p className="p-5 text-center text-[13px] text-text-muted">No subscriptions added yet.</p>
             )}
             {subscriptions.map((sub) => {
               const nextDate = new Date(sub.nextBillingDate);
@@ -126,12 +134,10 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
               return (
                 <div
                   key={sub.id}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--bg-secondary)", borderRadius: "10px", border: "1px solid var(--border-subtle)", transition: "background 0.15s" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-body)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-secondary)")}
+                  className="flex items-center justify-between rounded-[10px] border border-border-subtle bg-bg-secondary px-3.5 py-3 transition-colors duration-150 hover:bg-bg-card"
                 >
-                  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                    <div style={{ width: "38px", height: "38px", borderRadius: "9px", backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "17px", flexShrink: 0, overflow: "hidden" }}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center overflow-hidden rounded-[9px] border border-border-subtle bg-bg-card text-[17px]">
                       {(() => {
                         const logoUrl = getSubLogoUrl(sub.name);
                         if (logoUrl) {
@@ -142,7 +148,7 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
                               alt={sub.name}
                               width={28}
                               height={28}
-                              style={{ objectFit: "contain", borderRadius: "3px" }}
+                              className="rounded-[3px] object-contain"
                             />
                           );
                         }
@@ -150,22 +156,20 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
                       })()}
                     </div>
                     <div>
-                      <p style={{ fontWeight: 600, fontSize: "13px" }}>{sub.name}</p>
-                      <p style={{ fontSize: "11px", color: isDueSoon ? "#b3666b" : "var(--text-muted)", marginTop: "2px", fontWeight: isDueSoon ? 600 : 400 }}>
+                      <p className="text-[13px] font-semibold">{sub.name}</p>
+                      <p className={`mt-0.5 text-[11px] ${isDueSoon ? "font-semibold text-[#b3666b]" : "font-normal text-text-muted"}`}>
                         {isDueSoon ? `⚡ Due in ${daysUntil}d` : `Next: ${sub.nextBillingDate}`}
                       </p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ fontWeight: 700, fontSize: "13px" }}>{currency}{sub.cost.toFixed(2)}</p>
-                      <p style={{ fontSize: "10px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.4px" }}>{sub.billingCycle}</p>
+                  <div className="flex items-center gap-3.5">
+                    <div className="text-right">
+                      <p className="text-[13px] font-bold">{currency}{sub.cost.toFixed(2)}</p>
+                      <p className="font-mono text-[10px] tracking-[0.4px] text-text-muted uppercase">{sub.billingCycle}</p>
                     </div>
                     <button
                       onClick={() => deleteSubscription(sub.id)}
-                      style={{ backgroundColor: "transparent", border: "none", color: "var(--text-muted)", padding: "4px", borderRadius: "6px", cursor: "pointer", transition: "color 0.15s" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = "#b3666b")}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+                      className="rounded-md border-none bg-transparent p-1 text-text-muted transition-colors duration-150 hover:text-[#b3666b]"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
@@ -192,11 +196,11 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
             return seg;
           });
           return (
-            <div className="bento-card" style={{ padding: "24px" }}>
-              <span className="label-mono" style={{ marginBottom: "16px", display: "block" }}>Monthly Split</span>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
-                <div style={{ position: "relative", width: "190px", height: "190px" }}>
-                  <svg viewBox="0 0 200 200" width="190" height="190" style={{ transform: "rotate(-90deg)" }}>
+            <div className={`${BENTO_CARD} max-md:col-start-1`}>
+              <span className={`${LABEL_MONO} mb-4 block`}>Monthly Split</span>
+              <div className="flex flex-col items-center gap-5">
+                <div className="relative h-[190px] w-[190px]">
+                  <svg viewBox="0 0 200 200" width="190" height="190" className="-rotate-90">
                     <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--bg-secondary)" strokeWidth={strokeW} />
                     {segments.map((seg, i) => (
                       <circle
@@ -209,23 +213,23 @@ export const SubscriptionsTab: React.FC<SubscriptionsTabProps> = ({
                         strokeWidth={strokeW}
                         strokeDasharray={`${Math.max(seg.dash - 3, 0)} ${circ - Math.max(seg.dash - 3, 0)}`}
                         strokeDashoffset={-seg.offset}
-                        style={{ transition: "stroke-dasharray 0.5s ease" }}
+                        className="transition-[stroke-dasharray] duration-500 ease-in-out"
                       />
                     ))}
                   </svg>
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                    <p style={{ fontSize: "10px", fontFamily: "monospace", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.5px" }}>Monthly</p>
-                    <p style={{ fontSize: "20px", fontWeight: 700, marginTop: "3px", color: "var(--text-primary)" }}>{currency}{totalMonthly.toFixed(0)}</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <p className="font-mono text-[10px] tracking-[0.5px] text-text-muted uppercase">Monthly</p>
+                    <p className="mt-[3px] text-xl font-bold text-text-primary">{currency}{totalMonthly.toFixed(0)}</p>
                   </div>
                 </div>
-                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div className="flex w-full flex-col gap-2">
                   {segments.map((seg, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: "8px", height: "8px", borderRadius: "2px", backgroundColor: seg.color, flexShrink: 0 }} />
-                        <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}>{seg.sub.name}</span>
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: seg.color }} />
+                        <span className="text-xs font-medium text-text-primary">{seg.sub.name}</span>
                       </div>
-                      <span style={{ fontSize: "11px", fontFamily: "monospace", color: "var(--text-muted)", fontWeight: 600 }}>
+                      <span className="font-mono text-[11px] font-semibold text-text-muted">
                         {(seg.pct * 100).toFixed(0)}%
                       </span>
                     </div>

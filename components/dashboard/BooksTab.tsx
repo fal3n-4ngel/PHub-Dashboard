@@ -16,6 +16,29 @@ interface BooksTabProps {
   isFetchingWatchlist: boolean;
 }
 
+const STAT_CARD = "flex flex-col gap-1 rounded-card border border-border-subtle bg-bg-card p-5 shadow-subtle relative overflow-hidden transition-all duration-200 hover:shadow-hover hover:-translate-y-0.5";
+const LABEL_MONO = "font-mono text-[10px] font-semibold tracking-[0.8px] text-text-secondary uppercase";
+const STAT_VALUE = "text-[28px] font-bold tracking-[-0.5px] text-text-primary";
+const STAT_SUBTEXT = "mt-1 text-[11px] text-text-muted";
+const BTN_PRIMARY = "rounded-md border border-text-primary bg-text-primary text-[13px] font-medium text-white transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27] active:scale-[0.98]";
+const INPUT_CLASS = "rounded-lg border border-border-subtle bg-bg-card px-3 py-2 text-[13px] text-text-primary outline-none transition-all duration-200 focus:border-border-hover focus:shadow-focus";
+
+const pillClass = (id: string, active: boolean) => {
+  const base = "cursor-pointer rounded-md border-none px-3.5 py-1.5 text-[11px] font-semibold transition-all duration-200 flex items-center gap-1.5";
+  if (!active) return `${base} bg-transparent text-text-secondary hover:text-text-primary hover:bg-bg-secondary/40`;
+  
+  if (id === "reading") {
+    return `${base} bg-[#e0f2fe] text-[#0369a1] shadow-[0_1px_2px_rgba(3,105,161,0.05)]`;
+  }
+  if (id === "to_read") {
+    return `${base} bg-[#ffedd5] text-[#c2410c] shadow-[0_1px_2px_rgba(194,65,12,0.05)]`;
+  }
+  if (id === "completed") {
+    return `${base} bg-[#dcfce7] text-[#15803d] shadow-[0_1px_2px_rgba(21,128,61,0.05)]`;
+  }
+  return `${base} bg-white text-text-primary shadow-sm`;
+};
+
 export const BooksTab: React.FC<BooksTabProps> = ({
   watchlist,
   bookQuery,
@@ -45,64 +68,79 @@ export const BooksTab: React.FC<BooksTabProps> = ({
   const finishedCount = books.filter((i) => i.status === "completed").length;
 
   return (
-    <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-      <h1 style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "-0.5px" }}>Book Library</h1>
+    <div className="flex flex-col gap-6 animate-[fadeIn_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
+      <h1 className="font-serif text-3xl font-bold tracking-tight text-text-primary">Book Library</h1>
 
       {/* Book Stat Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
-        <div className="stat-card">
-          <span className="label-mono">READING NOW</span>
-          <span className="stat-value">{readingCount}</span>
-          <span className="stat-subtext">In progress</span>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+        <div className={`${STAT_CARD} border-t-2 border-t-accent-blue/80`}>
+          <span className={LABEL_MONO}>READING NOW</span>
+          <span className={STAT_VALUE}>{readingCount}</span>
+          <span className={STAT_SUBTEXT}>In progress</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">TO READ</span>
-          <span className="stat-value" style={{ color: "#e39282" }}>{toReadCount}</span>
-          <span className="stat-subtext">On the shelf</span>
+        <div className={`${STAT_CARD} border-t-2 border-t-[#e39282]/80`}>
+          <span className={LABEL_MONO}>TO READ</span>
+          <span className={STAT_VALUE} style={{ color: "#e39282" }}>{toReadCount}</span>
+          <span className={STAT_SUBTEXT}>On the shelf</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">FINISHED</span>
-          <span className="stat-value" style={{ color: "#e39282" }}>{finishedCount}</span>
-          <span className="stat-subtext">Books read</span>
+        <div className={`${STAT_CARD} border-t-2 border-t-[#b3666b]/80`}>
+          <span className={LABEL_MONO}>FINISHED</span>
+          <span className={STAT_VALUE} style={{ color: "#b3666b" }}>{finishedCount}</span>
+          <span className={STAT_SUBTEXT}>Books read</span>
         </div>
-        <div className="stat-card">
-          <span className="label-mono">TOTAL IN LIBRARY</span>
-          <span className="stat-value">{books.length}</span>
-          <span className="stat-subtext">All books</span>
+        <div className={`${STAT_CARD} border-t-2 border-t-text-secondary/40`}>
+          <span className={LABEL_MONO}>TOTAL IN LIBRARY</span>
+          <span className={STAT_VALUE}>{books.length}</span>
+          <span className={STAT_SUBTEXT}>All books</span>
         </div>
       </div>
 
       {/* Search Google Books Card */}
-      <div className="bento-card">
-        <span className="label-mono" style={{ marginBottom: "12px", display: "block" }}>Search Google Books</span>
-        <form onSubmit={searchBooks} style={{ display: "flex", gap: "12px" }}>
-          <input
-            type="text"
-            placeholder="Title, Author..."
-            value={bookQuery}
-            onChange={(e) => setBookQuery(e.target.value)}
-            style={{ flex: 1 }}
-            required
-          />
-          <button type="submit" disabled={isSearchingBooks} className="btn-primary" style={{ padding: "8px 24px" }}>
+      <div className="rounded-card border border-border-subtle bg-bg-card p-6 shadow-subtle">
+        <span className={`${LABEL_MONO} mb-4 block`}>Search Google Books</span>
+        <form onSubmit={searchBooks} className="flex gap-3">
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-3 flex items-center text-text-muted pointer-events-none">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              placeholder="Search for books by title, author..."
+              value={bookQuery}
+              onChange={(e) => setBookQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-border-subtle bg-bg-card text-[13px] text-text-primary outline-none transition-all duration-200 focus:border-border-hover focus:shadow-focus"
+              required
+            />
+          </div>
+          <button type="submit" disabled={isSearchingBooks} className={`${BTN_PRIMARY} px-6 py-2`}>
             {isSearchingBooks ? "Searching..." : "Search"}
           </button>
         </form>
 
         {/* Search Results */}
         {bookResults.length > 0 && (
-          <div style={{ marginTop: "16px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px" }}>
+          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
             {bookResults.map((res, i) => (
-              <div key={i} style={{ display: "flex", gap: "10px", backgroundColor: "var(--bg-body)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-subtle)", alignItems: "center" }}>
-                {res.coverImage ? (
-                  <img src={res.coverImage} alt={res.title} style={{ width: "40px", height: "56px", objectFit: "cover", borderRadius: "4px" }} />
-                ) : (
-                  <div style={{ width: "40px", height: "56px", backgroundColor: "var(--bg-secondary)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>📚</div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{res.title}</p>
-                  <p style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>{res.year || "—"}</p>
-                  <button onClick={() => addBook(res)} className="btn-secondary" style={{ fontSize: "10px", padding: "3px 8px", marginTop: "6px" }}>
+              <div key={i} className="group flex items-center gap-3 rounded-lg border border-border-subtle bg-bg-primary p-3 transition-all duration-200 hover:bg-bg-secondary/40 hover:border-border-hover">
+                <div className="relative shrink-0 shadow-sm rounded overflow-hidden h-14 w-10 bg-bg-secondary flex items-center justify-center">
+                  {res.coverImage ? (
+                    <>
+                      <img src={res.coverImage} alt={res.title} className="h-full w-full object-cover" />
+                      <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-r from-black/25 via-black/10 to-transparent pointer-events-none" />
+                    </>
+                  ) : (
+                    <span className="text-lg">📚</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-text-primary" title={res.title}>{res.title}</p>
+                  <p className="mt-0.5 text-[10px] text-text-muted">{res.year || "—"}</p>
+                  <button
+                    onClick={() => addBook(res)}
+                    className="mt-2 rounded-md border border-border-subtle bg-bg-card hover:bg-bg-secondary hover:border-border-hover text-text-primary px-2.5 py-1 text-[10px] font-semibold transition-all duration-150 flex items-center justify-center gap-1 w-fit cursor-pointer"
+                  >
                     + Add Book
                   </button>
                 </div>
@@ -114,11 +152,11 @@ export const BooksTab: React.FC<BooksTabProps> = ({
 
       {/* Your Library Section */}
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: 700 }}>Your Library</h2>
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="font-serif text-lg font-bold tracking-tight text-text-primary">Your Library</h2>
 
           {/* Filter Pills */}
-          <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", padding: "3px" }}>
+          <div className="flex gap-1 rounded-lg bg-bg-secondary p-[3px]">
             {[
               { id: "reading", label: "📖 Reading" },
               { id: "to_read", label: "⏳ To Read" },
@@ -127,17 +165,7 @@ export const BooksTab: React.FC<BooksTabProps> = ({
               <button
                 key={f.id}
                 onClick={() => setBookFilter(bookFilter === f.id ? "all" : (f.id as any))}
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  padding: "4px 10px",
-                  backgroundColor: bookFilter === f.id ? "#fff" : "transparent",
-                  color: bookFilter === f.id ? "var(--text-primary)" : "var(--text-secondary)",
-                  borderRadius: "6px",
-                  border: "none",
-                  cursor: "pointer",
-                  boxShadow: bookFilter === f.id ? "0 1px 3px rgba(0,0,0,0.05)" : "none",
-                }}
+                className={pillClass(f.id, bookFilter === f.id)}
               >
                 {f.label}
               </button>
@@ -146,57 +174,64 @@ export const BooksTab: React.FC<BooksTabProps> = ({
         </div>
 
         {/* Book Covers Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: "24px" }}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5">
           {filteredBooks.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-                transition: "transform 0.2s ease",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-4px)")}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
-            >
-              {item.coverImage ? (
-                <img
-                  src={item.coverImage}
-                  alt={item.title}
-                  style={{ width: "100%", height: "180px", objectFit: "cover", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                />
-              ) : (
-                <div style={{ width: "100%", height: "180px", backgroundColor: "var(--bg-secondary)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "36px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
-                  📚
-                </div>
-              )}
-              <div>
-                <p style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: "38px" }}>
+            <div key={item.id} className="group flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-card p-3 shadow-subtle hover:shadow-[0_8px_30px_rgba(28,27,24,0.04)] transition-all duration-300 hover:-translate-y-1">
+              <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg shadow-sm transition-all duration-300 group-hover:shadow-md">
+                {item.coverImage ? (
+                  <>
+                    <img
+                      src={item.coverImage}
+                      alt={item.title}
+                      className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+                    />
+                    {/* 3D Book spine shadow overlay */}
+                    <div className="absolute inset-y-0 left-0 w-2.5 bg-gradient-to-r from-black/25 via-black/10 to-transparent pointer-events-none" />
+                    {/* Subtle gloss overlay to simulate paper book cover sheen */}
+                    <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                  </>
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-bg-secondary text-4xl shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+                    📚
+                  </div>
+                )}
+                {/* Delete button absolute overlay (visible on hover) */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteWatchItem(item.id);
+                  }}
+                  className="absolute top-2 right-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-border-subtle bg-white/95 text-text-muted shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-[#fdf2f2] hover:text-[#b3666b] hover:border-[#fde2e2] active:scale-95"
+                  title="Remove book"
+                >
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex flex-col flex-1 justify-between gap-2.5">
+                <p className="line-clamp-2 min-h-[36px] font-serif text-[13px] font-bold tracking-tight text-text-primary leading-tight group-hover:text-text-primary/90 transition-colors" title={item.title}>
                   {item.title}
                 </p>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px" }}>
+                <div className="relative w-full mt-auto">
                   <select
                     value={item.status}
                     onChange={(e) => updateWatchItem(item, { status: e.target.value as any })}
-                    style={{ fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--border-subtle)", backgroundColor: "#fff", cursor: "pointer", flex: 1, marginRight: "8px" }}
+                    className="w-full cursor-pointer appearance-none rounded-lg border border-border-subtle bg-bg-secondary/40 py-1 pl-2.5 pr-6 text-[10.5px] font-bold text-text-secondary transition-all duration-200 hover:border-border-hover hover:bg-bg-secondary hover:text-text-primary outline-none"
                   >
-                    <option value="watching">Reading</option>
-                    <option value="plan_to_watch">To Read</option>
-                    <option value="completed">Done</option>
+                    <option value="watching">📖 Reading</option>
+                    <option value="plan_to_watch">⏳ To Read</option>
+                    <option value="completed">✅ Done</option>
                   </select>
-                  <button
-                    onClick={() => deleteWatchItem(item.id)}
-                    style={{ backgroundColor: "transparent", border: "none", color: "#b3666b", fontSize: "13px", cursor: "pointer", padding: "4px" }}
-                    title="Remove book"
-                  >
-                    ✕
-                  </button>
+                  <span className="absolute inset-y-0 right-2 flex items-center pointer-events-none text-text-muted text-[8px] select-none">
+                    ▼
+                  </span>
                 </div>
               </div>
             </div>
           ))}
           {filteredBooks.length === 0 && (
-            <p style={{ gridColumn: "1 / -1", textAlign: "center", color: "var(--text-muted)", padding: "32px", fontSize: "13px" }}>
+            <p className="col-span-full p-8 text-center text-[13px] text-text-muted">
               {isFetchingWatchlist ? "Loading library..." : "No books found in this view."}
             </p>
           )}
