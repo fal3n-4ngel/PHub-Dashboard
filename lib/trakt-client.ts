@@ -11,13 +11,14 @@ export interface TraktRequestOptions {
 }
 
 export async function traktRequest(idToken: string | undefined, path: string, opts: TraktRequestOptions = {}) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const res = await fetch("/api/trakt/proxy", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${idToken || ""}`,
     },
-    body: JSON.stringify({ path, method: opts.method, token: opts.token, body: opts.body }),
+    body: JSON.stringify({ path: normalizedPath, method: opts.method, token: opts.token, body: opts.body }),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
