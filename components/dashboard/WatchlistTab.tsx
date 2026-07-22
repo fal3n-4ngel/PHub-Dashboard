@@ -371,10 +371,10 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
             {filteredWatchlist.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-3.5 rounded-lg border border-border-subtle bg-bg-card px-3.5 py-3 transition-[transform,box-shadow] duration-150"
+                className="flex items-center justify-between gap-3.5 rounded-lg border border-border-subtle bg-bg-card px-3.5 py-3 transition-[transform,box-shadow] duration-150 max-md:flex-col max-md:items-stretch"
               >
                 {/* Poster & Info */}
-                <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                <div className="flex min-w-0 flex-1 items-center gap-3.5 max-md:w-full">
                   {item.coverImage ? (
                     <img src={item.coverImage} alt={item.title} className="h-14 w-10 shrink-0 rounded object-cover shadow-[0_2px_6px_rgba(0,0,0,0.05)]" />
                   ) : (
@@ -412,11 +412,11 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                 </div>
 
                 {/* Right controls: Status, Score, Delete */}
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2 max-md:w-full">
                   <select
                     value={item.status}
                     onChange={(e) => updateWatchItem(item, { status: e.target.value as any })}
-                    className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px]"
+                    className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px] max-md:flex-1 max-md:min-w-0"
                   >
                     <option value="watching">Watching</option>
                     <option value="plan_to_watch">Plan</option>
@@ -427,7 +427,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                   <select
                     value={item.rating || 0}
                     onChange={(e) => updateWatchItem(item, { rating: Number(e.target.value) || null })}
-                    className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px]"
+                    className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px] max-md:flex-1 max-md:min-w-0"
                   >
                     <option value="0">Score v</option>
                     {[10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((n) => (
@@ -437,7 +437,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
 
                   <button
                     onClick={() => deleteWatchItem(item.id)}
-                    className="cursor-pointer rounded-md border-none bg-transparent px-2 py-1 text-sm font-bold text-[#b3666b] hover:bg-[rgba(179,102,107,0.08)]"
+                    className="shrink-0 cursor-pointer rounded-md border-none bg-transparent px-2 py-1 text-sm font-bold text-[#b3666b] hover:bg-[rgba(179,102,107,0.08)]"
                     title="Delete item"
                   >
                     ✕
