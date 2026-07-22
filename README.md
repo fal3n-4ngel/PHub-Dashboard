@@ -1,4 +1,4 @@
-# 📊 PHub Dashboard
+# PHub Dashboard
 
 > **One dashboard to rule them all.** Replace 5 single-purpose apps with a self-hosted, privacy-first command center for your finances, watchlists, books, subscriptions, and quick notes—all hooked up directly to your favorite AI assistant.
 
@@ -19,10 +19,7 @@
 ## 💡 Why This Exists
 Well, it’s been a while since I worked on any public projects—mostly coz I rarely get time after work, and even when I do, it’s usually personal APIs or portfolio updates.
 
-I already had a system to track my expenses and movies via my perosnal api, which I enhanced when ChatGPT released Custom GPTs so I could add stuff directly via chat (use ai without paying for api). Instead of putting AI inside my API, I put my API inside AI (sounded cool in my head)
-
-Anyway, a friend saw it and wanted it too, so rather than handing over my personal API collection, I decided to build a proper dashboard instead. And here we are!
----
+I already had a system to track my expenses and movies via my perosnal api, which I enhanced when ChatGPT released Custom GPTs so I could add stuff directly via chat (use ai without paying for api). Instead of putting AI inside my API, I put my API inside AI (sounded cool in my head). Anyway, a friend saw it and wanted it too, so rather than handing over my personal API collection, I decided to build a proper dashboard instead. And here we are!---
 
 ## 🛠 Tech Stack
 
