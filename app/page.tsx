@@ -130,6 +130,18 @@ export default function Dashboard() {
   const [invSuggestions, setInvSuggestions] = useState<InvestmentQuote[]>([]);
   const [showInvestmentsTab, setShowInvestmentsTab] = useState(true);
 
+  // Load Feature Flags
+  useEffect(() => {
+    fetch("/api/flags")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.enableInvestmentPortfolios === "boolean") {
+          setShowInvestmentsTab(data.enableInvestmentPortfolios);
+        }
+      })
+      .catch((err) => console.error("Failed to load feature flags:", err));
+  }, []);
+
   // Onboarding & Confirm Dialogs
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [confirmDlg, setConfirmDlg] = useState<ConfirmState>({
