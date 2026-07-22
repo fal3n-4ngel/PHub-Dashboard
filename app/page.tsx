@@ -321,6 +321,21 @@ export default function Dashboard() {
     }
   };
 
+  const fetchOMDbPoster = async (imdbId: string | null | undefined): Promise<string | null> => {
+    const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
+    if (!imdbId || !apiKey) return null;
+    try {
+      const res = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${apiKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.Poster && data.Poster !== "N/A" ? data.Poster : null;
+      }
+    } catch (err) {
+      console.error("OMDb poster error:", err);
+    }
+    return null;
+  };
+
   const syncTrakt = async () => {
     if (!traktUser?.accessToken) {
       connectTrakt();
@@ -337,6 +352,17 @@ export default function Dashboard() {
       if (Array.isArray(movies)) {
         for (const item of movies) {
           if (!item?.movie) continue;
+          const existing = watchlist.find(
+            (w) =>
+              (w.traktId && w.traktId === item.movie.ids?.trakt) ||
+              (w.title.toLowerCase().trim() === item.movie.title.toLowerCase().trim() && w.type === "movie")
+          );
+
+          let coverImage = existing?.coverImage || null;
+          if (!coverImage && item.movie.ids?.imdb) {
+            coverImage = await fetchOMDbPoster(item.movie.ids.imdb);
+          }
+
           entries.push({
             title: item.movie.title,
             type: "movie",
@@ -344,7 +370,7 @@ export default function Dashboard() {
             progress: 1,
             totalEpisodes: 1,
             rating: item.rating ? Number(item.rating) : null,
-            coverImage: null,
+            coverImage,
             year: item.movie.year || null,
             traktId: item.movie.ids?.trakt,
           });
@@ -379,6 +405,23 @@ export default function Dashboard() {
             status = "completed";
           }
 
+          let coverImage = existing?.coverImage || null;
+          if (!coverImage && item.show.ids?.imdb) {
+            coverImage = await fetchOMDbPoster(item.show.ids.imdb);
+          }
+          // TVMaze fallback for TV shows
+          if (!coverImage && item.show.ids?.imdb) {
+            try {
+              const tvmazeRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${item.show.ids.imdb}`);
+              if (tvmazeRes.ok) {
+                const tvmazeData = await tvmazeRes.json();
+                coverImage = tvmazeData.image?.medium || null;
+              }
+            } catch (err) {
+              console.error("TVMaze fallback error:", err);
+            }
+          }
+
           entries.push({
             title: item.show.title,
             type: "show",
@@ -386,7 +429,7 @@ export default function Dashboard() {
             progress,
             totalEpisodes,
             rating: item.rating ? Number(item.rating) : null,
-            coverImage: existing?.coverImage || null,
+            coverImage,
             year: item.show.year || null,
             traktId: item.show.ids?.trakt,
           });
@@ -719,19 +762,37 @@ export default function Dashboard() {
       } else {
         const data = await traktRequest(user?.idToken, `search/${mediaType}?query=${encodeURIComponent(mediaQuery)}&limit=8`);
         if (Array.isArray(data)) {
-          setSearchResults(
-            data.map((item: any) => {
+          const enrichedResults = await Promise.all(
+            data.map(async (item: any) => {
               const m = item.movie || item.show;
+              const imdbId = m.ids?.imdb;
+              let coverImage = null;
+              if (imdbId) {
+                coverImage = await fetchOMDbPoster(imdbId);
+              }
+              // TVMaze fallback for shows
+              if (!coverImage && item.type === "show" && imdbId) {
+                try {
+                  const tvmazeRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
+                  if (tvmazeRes.ok) {
+                    const tvmazeData = await tvmazeRes.json();
+                    coverImage = tvmazeData.image?.medium || null;
+                  }
+                } catch (err) {
+                  console.error("TVMaze fallback error:", err);
+                }
+              }
               return {
                 title: m.title,
-                type: item.type === "movie" ? "movie" : "show",
+                type: (item.type === "movie" ? "movie" : "show") as "movie" | "show",
                 totalEpisodes: item.type === "show" ? m.aired_episodes || null : null,
-                coverImage: null,
+                coverImage,
                 year: m.year || null,
                 traktId: m.ids?.trakt || null,
               };
             })
           );
+          setSearchResults(enrichedResults);
         }
       }
     } catch (err) {
