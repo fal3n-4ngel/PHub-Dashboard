@@ -106,6 +106,7 @@ export default function Dashboard() {
   const [isSearchingBooks, setIsSearchingBooks] = useState(false);
   const [bookResults, setBookResults] = useState<SearchResult[]>([]);
   const [bookFilter, setBookFilter] = useState<"all" | "reading" | "to_read" | "completed">("reading");
+  const [isEnrichingBookCovers, setIsEnrichingBookCovers] = useState(false);
 
   // Notes State
   const [noteContent, setNoteContent] = useState("");
@@ -548,6 +549,60 @@ export default function Dashboard() {
           triggerAlert("Enrichment Error", err.message || "Failed to enrich posters.", "danger");
         } finally {
           setIsEnrichingPosters(false);
+        }
+      }
+    );
+  };
+
+  const enrichMissingBookCovers = async () => {
+    const missing = watchlist.filter((w) => w.type === "book" && !w.coverImage);
+    if (missing.length === 0) {
+      triggerAlert("All Good", "All your books already have cover images!", "success");
+      return;
+    }
+
+    triggerConfirm(
+      "Fetch Missing Covers",
+      `Found ${missing.length} book${missing.length === 1 ? "" : "s"} with missing cover art. Fetch them now from OpenLibrary?`,
+      async () => {
+        setIsEnrichingBookCovers(true);
+        let successCount = 0;
+        try {
+          for (const item of missing) {
+            let coverImage: string | null = null;
+            try {
+              const searchUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(item.title)}&limit=1`;
+              const res = await fetch(searchUrl);
+              if (res.ok) {
+                const data = await res.json();
+                const doc = data.docs?.[0];
+                coverImage = doc?.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
+              }
+            } catch (e) {
+              console.error("OpenLibrary search error:", e);
+            }
+
+            if (coverImage) {
+              const res = await fetch(`/api/watchlist/${item.id}`, {
+                method: "PATCH",
+                headers: getHeaders(),
+                body: JSON.stringify({ coverImage }),
+              });
+              if (res.ok) successCount++;
+            }
+          }
+
+          if (successCount > 0) {
+            await fetchWatchlist();
+            triggerAlert("Enrichment Complete", `Successfully updated ${successCount} book${successCount === 1 ? "" : "s"} with cover art!`, "success");
+          } else {
+            triggerAlert("Enrichment Complete", "Could not find any covers for the missing books.", "info");
+          }
+        } catch (err: any) {
+          console.error("Book cover enrichment error:", err);
+          triggerAlert("Enrichment Error", err.message || "Failed to enrich book covers.", "danger");
+        } finally {
+          setIsEnrichingBookCovers(false);
         }
       }
     );
@@ -1440,6 +1495,8 @@ const updateMarketPrices = async () => {
             updateWatchItem={updateWatchItem}
             deleteWatchItem={deleteWatchItem}
             isFetchingWatchlist={isFetchingWatchlist}
+            enrichMissingBookCovers={enrichMissingBookCovers}
+            isEnrichingBookCovers={isEnrichingBookCovers}
           />
         )}
 

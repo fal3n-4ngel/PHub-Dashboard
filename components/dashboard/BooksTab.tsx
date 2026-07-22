@@ -1,6 +1,6 @@
 import React from "react";
 import { WatchlistItem, SearchResult } from "@/types";
-import { Search, Trash2 } from "lucide-react";
+import { Search, Trash2, Sparkles } from "lucide-react";
 
 interface BooksTabProps {
   watchlist: WatchlistItem[];
@@ -15,6 +15,8 @@ interface BooksTabProps {
   updateWatchItem: (item: WatchlistItem, updates: Partial<WatchlistItem>) => void;
   deleteWatchItem: (id: string) => void;
   isFetchingWatchlist: boolean;
+  enrichMissingBookCovers?: () => void;
+  isEnrichingBookCovers?: boolean;
 }
 
 const STAT_CARD = "flex flex-col gap-1 rounded-card border border-border-subtle bg-bg-card p-5 shadow-subtle relative overflow-hidden transition-all duration-200 hover:shadow-hover hover:-translate-y-0.5";
@@ -53,6 +55,8 @@ export const BooksTab: React.FC<BooksTabProps> = ({
   updateWatchItem,
   deleteWatchItem,
   isFetchingWatchlist,
+  enrichMissingBookCovers,
+  isEnrichingBookCovers = false,
 }) => {
   const books = watchlist.filter((item) => item.type === "book");
 
@@ -151,26 +155,40 @@ export const BooksTab: React.FC<BooksTabProps> = ({
 
       {/* Your Library Section */}
       <div>
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-serif text-lg font-bold tracking-tight text-text-primary">Your Library</h2>
 
-          {/* Filter Pills */}
-          <div className="flex gap-1 rounded-lg bg-bg-secondary p-[3px]">
-            {(
-              [
-                { id: "reading", label: "📖 Reading" },
-                { id: "to_read", label: "⏳ To Read" },
-                { id: "completed", label: "✅ Done" },
-              ] as const
-            ).map((f) => (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {books.some((b) => !b.coverImage) && enrichMissingBookCovers && (
               <button
-                key={f.id}
-                onClick={() => setBookFilter(bookFilter === f.id ? "all" : f.id)}
-                className={pillClass(f.id, bookFilter === f.id)}
+                onClick={enrichMissingBookCovers}
+                disabled={isEnrichingBookCovers}
+                className="flex cursor-pointer items-center gap-1 rounded-md border border-border-subtle bg-bg-card px-3 py-1.5 text-[11px] font-semibold text-text-primary transition-all duration-150 hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                title="Scan for books with missing cover art and fetch them from OpenLibrary"
               >
-                {f.label}
+                <Sparkles className="h-3 w-3" strokeWidth={2.5} />
+                {isEnrichingBookCovers ? "Fetching..." : "Fetch Posters"}
               </button>
-            ))}
+            )}
+
+            {/* Filter Pills */}
+            <div className="flex gap-1 rounded-lg bg-bg-secondary p-[3px]">
+              {(
+                [
+                  { id: "reading", label: "📖 Reading" },
+                  { id: "to_read", label: "⏳ To Read" },
+                  { id: "completed", label: "✅ Done" },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setBookFilter(bookFilter === f.id ? "all" : f.id)}
+                  className={pillClass(f.id, bookFilter === f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
