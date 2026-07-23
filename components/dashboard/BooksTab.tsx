@@ -1,5 +1,6 @@
 import React from "react";
 import { WatchlistItem, SearchResult } from "@/types";
+import { isSafeImageUrl } from "@/lib/safe-url";
 import { Search, Trash2, Sparkles } from "lucide-react";
 
 interface BooksTabProps {
@@ -143,7 +144,7 @@ export const BooksTab: React.FC<BooksTabProps> = ({
             {bookResults.map((res, i) => (
               <div key={i} className="group flex items-center gap-3 rounded-lg border border-border-subtle bg-bg-primary p-3 transition-all duration-200 hover:bg-bg-secondary/40 hover:border-border-hover">
                 <div className="relative shrink-0 shadow-sm rounded overflow-hidden h-14 w-10 bg-bg-secondary flex items-center justify-center">
-                  {res.coverImage ? (
+                  {isSafeImageUrl(res.coverImage) ? (
                     <>
                       <img src={res.coverImage} alt={res.title} className="h-full w-full object-cover" />
                       <div className="absolute inset-y-0 left-0 w-1.5 bg-linear-to-r from-black/25 via-black/10 to-transparent pointer-events-none" />
@@ -240,7 +241,7 @@ export const BooksTab: React.FC<BooksTabProps> = ({
                 onClick={() => onItemClick(item)}
                 className="relative aspect-[2/3] w-full overflow-hidden rounded-lg shadow-sm transition-all duration-300 group-hover:shadow-md cursor-pointer"
               >
-                {item.coverImage ? (
+                {isSafeImageUrl(item.coverImage) ? (
                   <>
                     <img
                       src={item.coverImage}

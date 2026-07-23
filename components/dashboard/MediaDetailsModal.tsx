@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { WatchlistItem, FirebaseUser } from "@/types";
 import { anilistQuery } from "@/lib/anilist";
 import { traktRequest } from "@/lib/trakt-client";
+import { isSafeImageUrl } from "@/lib/safe-url";
 import { Pencil } from "lucide-react";
 
 interface MediaDetailsModalProps {
@@ -495,7 +496,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({ item, onCl
         <div className="flex gap-5 max-sm:flex-col">
           {/* Left Column: Poster / Cover */}
           <div className="w-32 shrink-0 max-sm:mx-auto relative">
-            {displayCover ? (
+            {isSafeImageUrl(displayCover) ? (
               <>
                 <img src={displayCover} alt={displayTitle} className="w-full rounded-lg shadow-sm object-cover aspect-[2/3]" />
                 {item.type === "book" && (

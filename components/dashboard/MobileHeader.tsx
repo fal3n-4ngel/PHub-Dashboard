@@ -1,5 +1,6 @@
 import React from "react";
 import { FirebaseUser } from "@/types";
+import { isSafeImageUrl } from "@/lib/safe-url";
 
 interface MobileHeaderProps {
   activeTab: string;
@@ -67,7 +68,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
           </a>
           {user && (
             <img
-              src={user.photoURL || undefined}
+              src={isSafeImageUrl(user.photoURL) ? user.photoURL : undefined}
               alt="Profile"
               onClick={() => {
                 triggerConfirm("Sign Out", "Are you sure you want to sign out?", async () => {

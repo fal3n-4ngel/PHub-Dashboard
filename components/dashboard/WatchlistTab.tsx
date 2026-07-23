@@ -1,5 +1,6 @@
 import React from "react";
 import { WatchlistItem, SearchResult } from "@/types";
+import { isSafeImageUrl } from "@/lib/safe-url";
 
 interface WatchlistTabProps {
   watchlist: WatchlistItem[];
@@ -380,7 +381,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
             <div className="mt-4 flex max-h-[300px] flex-col gap-2.5 overflow-y-auto">
               {searchResults.map((res, i) => (
                 <div key={i} className="flex items-center gap-2.5 rounded-md bg-bg-secondary p-2">
-                  {res.coverImage ? (
+                  {isSafeImageUrl(res.coverImage) ? (
                     <img src={res.coverImage} alt={res.title} className="h-[46px] w-8 rounded object-cover" />
                   ) : (
                     <div className="flex h-[46px] w-8 items-center justify-center rounded bg-bg-card text-sm">🎬</div>
@@ -483,7 +484,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                   onClick={() => onItemClick(item)} 
                   className="flex min-w-0 flex-1 items-center gap-3.5 max-md:w-full cursor-pointer hover:opacity-85"
                 >
-                  {item.coverImage ? (
+                  {isSafeImageUrl(item.coverImage) ? (
                     <img src={item.coverImage} alt={item.title} className="h-14 w-10 shrink-0 rounded object-cover shadow-[0_2px_6px_rgba(0,0,0,0.05)]" />
                   ) : (
                     <div className="flex h-14 w-10 shrink-0 items-center justify-center rounded bg-bg-secondary text-lg shadow-[0_2px_6px_rgba(0,0,0,0.05)]">
