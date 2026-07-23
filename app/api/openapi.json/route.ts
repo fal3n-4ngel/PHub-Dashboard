@@ -156,9 +156,7 @@ export async function GET() {
           summary: "Add a watchlist item",
           description:
             "Add a movie, show, anime, or book to the watchlist. Check listWatchlistItems first to avoid duplicates. " +
-            "Use the real, official title, resolved from the user's shorthand/nickname if needed — never store what they typed verbatim unless that's already the actual title. " +
-            "Always populate 'year' — if the user doesn't state it, infer the release/publish year from your own knowledge of the title before calling this. " +
-            "It's the field that disambiguates remakes, reboots, and sequels sharing a title, so don't omit it just because the user didn't say it out loud.",
+            "Use the real official title (not the user's shorthand), and always populate 'year' — infer it from your own knowledge if not stated; it disambiguates remakes and sequels.",
           "x-openai-isConsequential": false,
           requestBody: {
             required: true,
