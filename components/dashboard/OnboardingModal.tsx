@@ -47,15 +47,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
         <div className="flex flex-col gap-3.5">
           {[
+            { icon: "🤖", bg: "#d1fae5", title: "AI Assistant", desc: "Connect ChatGPT, Claude, or Gemini via Permanent API Key & OpenAPI — log expenses or update your watchlist by chatting.", featured: true },
             { icon: "💸", bg: "#fde8e4", title: "Expense Ledger", desc: "Log transactions, tag categories, and set a custom salary-cycle day to see spending by pay period instead of calendar month." },
             ...(showInvestmentsTab ? [{ icon: "📈", bg: "#dcfce7", title: "Investments", desc: "Track equities, crypto, mutual funds, gold, and cash in one portfolio view." }] : []),
             { icon: "🎬", bg: "#ede9fe", title: "Watchlist", desc: "Movies, shows, and anime in one place — sync bidirectionally with AniList & Trakt, or import a Letterboxd CSV export." },
             { icon: "📚", bg: "#fef9c3", title: "Book Library", desc: "Search OpenLibrary to add books and track your reading progress." },
             { icon: "🔄", bg: "#dbeafe", title: "Subscriptions", desc: "Keep tabs on recurring monthly/yearly costs and your true effective monthly spend." },
             { icon: "📝", bg: "#f4f3ec", title: "Notes", desc: "A lightweight, auto-saving scratchpad for quick thoughts." },
-            { icon: "🤖", bg: "#d1fae5", title: "AI Assistant", desc: "Connect ChatGPT, Claude, or Gemini via Permanent API Key & OpenAPI — log expenses or update your watchlist by chatting." },
           ].map((f) => (
-            <div key={f.title} className="flex items-start gap-3">
+            <div
+              key={f.title}
+              className={`flex items-start gap-3 ${f.featured ? "-mx-3 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2.5" : ""}`}
+            >
               <div
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-base"
                 style={{ backgroundColor: f.bg }}
@@ -63,7 +66,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 {f.icon}
               </div>
               <div>
-                <p className="text-[13.5px] font-semibold">{f.title}</p>
+                <p className="flex items-center gap-1.5 text-[13.5px] font-semibold">
+                  {f.title}
+                  {f.featured && (
+                    <span className="rounded-full bg-[#1d4ed8] px-1.5 py-px text-[9px] font-bold tracking-[0.3px] text-white uppercase">Flagship</span>
+                  )}
+                </p>
                 <p className="mt-0.5 text-[12.5px] leading-normal text-text-secondary">{f.desc}</p>
               </div>
             </div>
@@ -71,18 +79,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <a
-            href="/assistant"
-            className="flex-[1_1_200px] rounded-md border border-border-subtle bg-transparent px-4 py-2 text-center text-[13px] font-medium text-text-primary no-underline transition-all duration-200 hover:bg-bg-primary"
-          >
-            Connect AI Agent →
-          </a>
+   
           <button
             onClick={() => setShowOnboarding(false)}
-            className="flex-[1_1_200px] rounded-md border border-text-primary bg-text-primary px-4 py-2 text-[13px] font-medium text-white transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27]"
+            className="flex-[1_1_200px] rounded-md border border-border-subtle bg-transparent px-4 py-2 text-[13px] font-medium text-text-primary transition-all duration-200 hover:bg-bg-primary"
           >
-            Let's go
+            Skip for now
           </button>
+                 <a
+            href="/assistant"
+            className="flex-[1_1_200px] rounded-md border border-text-primary bg-text-primary px-4 py-2 text-center text-[13px] font-medium text-white no-underline transition-all duration-200 hover:border-[#2e2d27] hover:bg-[#2e2d27]"
+          >
+            🤖 Connect AI Agent →
+          </a>
         </div>
       </div>
     </div>

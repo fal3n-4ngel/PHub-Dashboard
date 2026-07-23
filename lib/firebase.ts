@@ -26,7 +26,7 @@ export interface WatchlistItem {
   id?: string;
   title: string;
   type: "movie" | "show" | "anime" | "book";
-  status: "plan_to_watch" | "watching" | "completed" | "dropped";
+  status: "plan_to_watch" | "watching" | "completed" | "dropped" | "paused";
   progress: number;
   totalEpisodes: number | null;
   rating: number | null;
@@ -828,4 +828,49 @@ export async function updatePortfolio(session: Session, assets: InvestmentAsset[
     body: JSON.stringify({ fields: toFields(docData) }),
   });
   await cacheInvalidate(portfolioCacheKey(session));
+}
+
+export interface DashboardSettings {
+  timeFilter: "7" | "30" | "90" | "salary" | "all";
+  salaryDay: number;
+  updatedAt: number;
+}
+
+const SETTINGS_CACHE_TTL = 30_000;
+function settingsCacheKey(session: Session): string { return `settings:${session.config.projectId}:${session.uid}`; }
+
+export async function getSettings(session: Session): Promise<DashboardSettings | null> {
+  const cacheKey = settingsCacheKey(session);
+  const cached = await cacheGet<DashboardSettings | null>(cacheKey);
+  if (cached !== undefined) return cached;
+
+  try {
+    const res = await fsFetch<FirestoreDocument>(session, `${docsRoot(session)}/settings/${session.uid}`);
+    const data = fromFields(res.fields || {});
+    const record: DashboardSettings = {
+      timeFilter: (data.timeFilter as DashboardSettings["timeFilter"]) || "all",
+      salaryDay: Number(data.salaryDay || 1),
+      updatedAt: Number(data.updatedAt || 0),
+    };
+    await cacheSet(cacheKey, record, SETTINGS_CACHE_TTL);
+    return record;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      await cacheSet(cacheKey, null, SETTINGS_CACHE_TTL);
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function updateSettings(session: Session, updates: Partial<Omit<DashboardSettings, "updatedAt">>) {
+  const docData = { ...updates, updatedAt: Date.now() };
+  const params = new URLSearchParams();
+  Object.keys(docData).forEach((k) => params.append("updateMask.fieldPaths", k));
+
+  await fsFetch(session, `${docsRoot(session)}/settings/${session.uid}?${params}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: toFields(docData) }),
+  });
+  await cacheInvalidate(settingsCacheKey(session));
 }

@@ -1,5 +1,6 @@
 import React from "react";
 import { WatchlistItem, SearchResult } from "@/types";
+import { isSafeImageUrl } from "@/lib/safe-url";
 
 interface WatchlistTabProps {
   watchlist: WatchlistItem[];
@@ -124,10 +125,10 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
     document.body.removeChild(link);
   };
 
-  const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "plan_to_watch" | "completed">("all");
+  const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "paused" | "plan_to_watch" | "completed">("all");
   const [activeCategoryTab, setActiveCategoryTab] = React.useState<"movie" | "show" | "anime">("movie");
   const [titleSearch, setTitleSearch] = React.useState("");
-  const [sortBy, setSortBy] = React.useState<"title" | "rating" | "year">("title");
+  const [sortBy, setSortBy] = React.useState<"title" | "rating" | "year">("year");
 
   // Category tab is now a strict 3-way split: Movies / TV Shows / Anime each
   // show only their own type — no more combined "Movies & Shows" bucket.
@@ -380,7 +381,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
             <div className="mt-4 flex max-h-[300px] flex-col gap-2.5 overflow-y-auto">
               {searchResults.map((res, i) => (
                 <div key={i} className="flex items-center gap-2.5 rounded-md bg-bg-secondary p-2">
-                  {res.coverImage ? (
+                  {isSafeImageUrl(res.coverImage) ? (
                     <img src={res.coverImage} alt={res.title} className="h-[46px] w-8 rounded object-cover" />
                   ) : (
                     <div className="flex h-[46px] w-8 items-center justify-center rounded bg-bg-card text-sm">🎬</div>
@@ -437,6 +438,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                     [
                       { id: "all", label: "All" },
                       { id: "watching", label: "👁️ Watching" },
+                      { id: "paused", label: "⏸️ Paused" },
                       { id: "plan_to_watch", label: "⏳ Plan" },
                       { id: "completed", label: "✅ Done" },
                     ] as const
@@ -482,7 +484,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                   onClick={() => onItemClick(item)} 
                   className="flex min-w-0 flex-1 items-center gap-3.5 max-md:w-full cursor-pointer hover:opacity-85"
                 >
-                  {item.coverImage ? (
+                  {isSafeImageUrl(item.coverImage) ? (
                     <img src={item.coverImage} alt={item.title} className="h-14 w-10 shrink-0 rounded object-cover shadow-[0_2px_6px_rgba(0,0,0,0.05)]" />
                   ) : (
                     <div className="flex h-14 w-10 shrink-0 items-center justify-center rounded bg-bg-secondary text-lg shadow-[0_2px_6px_rgba(0,0,0,0.05)]">
@@ -526,6 +528,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                     className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px] max-md:flex-1 max-md:min-w-0"
                   >
                     <option value="watching">Watching</option>
+                    <option value="paused">Paused</option>
                     <option value="plan_to_watch">Plan</option>
                     <option value="completed">Completed</option>
                     <option value="dropped">Dropped</option>

@@ -1,5 +1,6 @@
 import React from "react";
 import { FirebaseUser, AniListUser, TraktUser } from "@/types";
+import { isSafeImageUrl } from "@/lib/safe-url";
 
 interface SidebarProps {
   activeTab: string;
@@ -119,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {anilistUser ? (
             <div className="mb-1 flex cursor-default items-center justify-between gap-3 rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-text-secondary transition-all duration-200 hover:bg-bg-primary hover:text-text-primary">
               <div className="flex min-w-0 items-center gap-2">
-                {anilistUser.avatar ? <img src={anilistUser.avatar} alt="" className="h-[18px] w-[18px] rounded-full" /> : <span>🌸</span>}
+                {isSafeImageUrl(anilistUser.avatar) ? <img src={anilistUser.avatar} alt="" className="h-[18px] w-[18px] rounded-full" /> : <span>🌸</span>}
                 <div className="overflow-hidden">
                   <p className="text-[11px] font-semibold">AniList</p>
                   <p className="overflow-hidden text-ellipsis text-[9px] text-text-muted">{anilistUser.name}</p>
@@ -154,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {traktUser ? (
             <div className="mb-1 flex cursor-default items-center justify-between gap-3 rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-text-secondary transition-all duration-200 hover:bg-bg-primary hover:text-text-primary">
               <div className="flex min-w-0 items-center gap-2">
-                {traktUser.avatar ? <img src={traktUser.avatar} alt="" className="h-[18px] w-[18px] rounded-full" /> : <span>🔴</span>}
+                {isSafeImageUrl(traktUser.avatar) ? <img src={traktUser.avatar} alt="" className="h-[18px] w-[18px] rounded-full" /> : <span>🔴</span>}
                 <div className="overflow-hidden">
                   <p className="text-[11px] font-semibold">Trakt</p>
                   <p className="overflow-hidden text-ellipsis text-[9px] text-text-muted">{traktUser.name || traktUser.username}</p>
@@ -264,7 +265,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {user && (
           <div className="mt-4 flex items-center gap-2.5 border-t border-border-subtle px-3.5 py-3">
-            {user.photoURL ? (
+            {isSafeImageUrl(user.photoURL) ? (
               <img src={user.photoURL} alt="profile" className="h-8 w-8 rounded-full object-cover" referrerPolicy="no-referrer" />
             ) : (
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-bg-secondary text-[13px] font-semibold text-white">

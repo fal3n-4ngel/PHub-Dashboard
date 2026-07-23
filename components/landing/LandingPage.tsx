@@ -469,6 +469,14 @@ export default function LandingPage({
           <BentoLogo size={12} color="#6e6c64" />
           Self-hostable · Open source · Private
         </span>
+        <div className={`mt-2.5 mb-2 flex justify-center ${HERO_REVEAL} [animation-delay:0.04s]`}>
+          <a
+            href="#chatgpt"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-3.5 py-1.5 text-[11.5px] font-semibold text-[#1d4ed8] no-underline transition-all duration-200 hover:border-[#93c5fd] hover:bg-[#dbeafe]"
+          >
+            🤖 Our flagship feature: chat with your dashboard via ChatGPT, Gemini & Claude →
+          </a>
+        </div>
         <h1 className={`${HERO_TITLE} ${HERO_REVEAL} [animation-delay:0.08s]`}>
           One dashboard.
           <br />
@@ -506,6 +514,9 @@ export default function LandingPage({
         <div
           className={`mt-7 flex flex-wrap justify-center gap-2 ${HERO_REVEAL} [animation-delay:0.26s]`}
         >
+          <span className="inline-flex items-center gap-[5px] rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-3 py-[5px] text-[11.5px] font-semibold text-[#1d4ed8]">
+            🤖 Custom LLM Sync (Gemini/ChatGPT)
+          </span>
           <span className="inline-flex items-center gap-[5px] rounded-full border border-[#e5e3db] bg-white px-3 py-[5px] text-[11.5px] font-medium text-[#6e6c64]">
             💸 Expense Ledger
           </span>
@@ -526,9 +537,6 @@ export default function LandingPage({
           </span>
           <span className="inline-flex items-center gap-[5px] rounded-full border border-[#e5e3db] bg-white px-3 py-[5px] text-[11.5px] font-medium text-[#6e6c64]">
             🎞️ Letterboxd import
-          </span>
-          <span className="inline-flex items-center gap-[5px] rounded-full border border-[#e5e3db] bg-white px-3 py-[5px] text-[11.5px] font-medium text-[#6e6c64]">
-            🤖 Custom LLM Sync (Gemini/ChatGPT)
           </span>
           <span className="inline-flex items-center gap-[5px] rounded-full border border-[#e5e3db] bg-white px-3 py-[5px] text-[11.5px] font-medium text-[#6e6c64]">
             🔒 AES-256 DB Encryption

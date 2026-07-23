@@ -22,7 +22,7 @@ export const ANILIST_STATUS_MAP: Record<string, MediaStatus> = {
   PLANNING: "plan_to_watch",
   COMPLETED: "completed",
   DROPPED: "dropped",
-  PAUSED: "watching",
+  PAUSED: "paused",
   REPEATING: "watching",
 };
 
@@ -31,4 +31,5 @@ export const TO_ANILIST_STATUS_MAP: Record<string, string> = {
   plan_to_watch: "PLANNING",
   completed: "COMPLETED",
   dropped: "DROPPED",
+  paused: "PAUSED",
 };

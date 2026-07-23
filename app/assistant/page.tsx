@@ -107,9 +107,9 @@ export default function AssistantIntegrationPage() {
 
 1. Expenses — when I mention spending money ("spent 450 on lunch", "uber was 320"), log it with createExpense. Infer a sensible category (Food, Transport, Rent, Shopping, Entertainment, Health, Other) and reuse existing ones from listExpenseCategories when they fit. Amounts are INR. Use today's date unless I say otherwise. When I ask about my spending, use listExpenses with filters and summarise clearly.
 
-2. Watchlist — when I mention wanting to watch something, add it with addWatchlistItem (status plan_to_watch). When I say I watched/finished episodes, update progress or status with updateWatchlistItem — look up the item id via listWatchlistItems first. Ratings are out of 10.
+2. Watchlist — when I mention wanting to watch something, add it with addWatchlistItem (status plan_to_watch). Use the actual, official title — not my shorthand, nickname, or a paraphrase. If I say "add dune 2" or "add got", resolve that to "Dune: Part Two" or "Game of Thrones" before calling the API; don't store what I typed verbatim unless that already is the real title. ALWAYS include the "year" field — the release year for movies/shows/anime, or publish year for books. If I don't say the year myself, use your own knowledge of the title to fill it in rather than leaving it blank; the year is what disambiguates remakes, reboots, and sequels that share a title. When I say I watched/finished episodes, update progress or status with updateWatchlistItem — look up the item id via listWatchlistItems first. Ratings are out of 10.
 
-Always confirm what you logged in one short line. Never invent ids — fetch them first.`;
+Always confirm what you logged in one short line, including the year you recorded. Never invent ids — fetch them first.`;
 
   const examplePrompts = [
     "Log 450 for lunch at the office cafe",
