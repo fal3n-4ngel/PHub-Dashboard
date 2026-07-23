@@ -32,6 +32,238 @@ const isConfidentMatch = (storedTitle: string, candidateTitle: string | null | u
   return !!a && !!b && a === b;
 };
 
+// One outcome shape shared by every lookup source below. `stop: true` means
+// "a synopsis was found here, don't try further fallback sources" — mirrors
+// the early `return`s the old single mega-function used to have inline.
+// Splitting these out of one function keeps each source's own branching
+// isolated (each is independently trivial to type-check) instead of one
+// ~300-line function threading foundTitle/foundYear/foundCover/omdbSucceeded
+// through five nested try/catch blocks, which is a well-known TypeScript
+// control-flow-analysis slow path — this file alone was taking 10-15x longer
+// to lint than any other file in the project (~60s+ vs ~4-6s).
+interface LookupOutcome {
+  synopsis?: string | null;
+  director?: string | null;
+  author?: string | null;
+  title?: string | null;
+  year?: number | null;
+  cover?: string | null;
+  stop: boolean;
+}
+
+async function lookupAnime(anilistId: number): Promise<LookupOutcome> {
+  const query = `
+    query ($id: Int) {
+      Media(id: $id) {
+        description
+        startDate { year }
+        title { english romaji }
+        coverImage { large }
+        staff(limit: 8) {
+          edges {
+            role
+            node { name { full } }
+          }
+        }
+      }
+    }
+  `;
+  const data = await anilistQuery(query, { id: anilistId });
+  const media = data?.data?.Media;
+  const desc = media?.description;
+  const staffEdges = media?.staff?.edges || [];
+  const dirNode = staffEdges.find((e: any) => e.role && e.role.toLowerCase().includes("director"));
+  return {
+    synopsis: desc ? stripHtml(desc) : null,
+    director: dirNode ? dirNode.node.name.full : null,
+    title: media?.title?.english || media?.title?.romaji || null,
+    year: media?.startDate?.year || null,
+    cover: media?.coverImage?.large || null,
+    stop: !!desc,
+  };
+}
+
+// Fetches Trakt's own details, then falls back to OMDb-by-imdbId for
+// director/synopsis/year/cover, then Trakt's People endpoint for director
+// only if OMDb didn't succeed at all. Lets the initial Trakt fetch's
+// exception propagate (uncaught here) so the caller's try/catch can fall
+// through to the next source — matching the original's behavior where only
+// that first fetch failing continues the fallback chain.
+async function lookupTraktDetails(idToken: string | undefined, type: "movie" | "show", traktId: number): Promise<LookupOutcome> {
+  const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
+  const details = await traktRequest(idToken, `${type}s/${traktId}`);
+
+  let synopsis: string | null = details?.overview || null;
+  let year: number | null = details?.year ? Number(details.year) : null;
+  let title: string | null = details?.title || null;
+  let director: string | null = null;
+  let cover: string | null = null;
+  const imdbId = details?.ids?.imdb;
+  let omdbSucceeded = false;
+
+  if (imdbId && apiKey) {
+    try {
+      const res = await fetch(`https://www.omdbapi.com/?i=${imdbId}&plot=full&apikey=${apiKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.Director && data.Director !== "N/A") director = data.Director;
+        if (data.Plot && data.Plot !== "N/A" && !details?.overview) synopsis = data.Plot;
+        if (!year && data.Year) {
+          const parsed = parseInt(String(data.Year).slice(0, 4), 10);
+          if (!Number.isNaN(parsed)) year = parsed;
+        }
+        if (!title && data.Title) title = data.Title;
+        if (!cover && data.Poster && data.Poster !== "N/A") cover = data.Poster;
+        omdbSucceeded = true;
+      }
+    } catch (e) {
+      console.error("OMDb inner search failed:", e);
+    }
+  }
+
+  if (!omdbSucceeded) {
+    try {
+      const people = await traktRequest(idToken, `${type}s/${traktId}/people`);
+      const directors = people?.crew?.directing
+        ?.filter((m: any) => m.job === "Director")
+        ?.map((m: any) => m.person?.name);
+      if (directors && directors.length > 0) director = directors.join(", ");
+    } catch (peopleErr) {
+      console.error("Trakt people failed:", peopleErr);
+    }
+  }
+
+  return { synopsis, director, title, year, cover, stop: true };
+}
+
+async function lookupTvMazeSummary(title: string): Promise<LookupOutcome> {
+  try {
+    const res = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(title)}`);
+    if (!res.ok) return { stop: false };
+    const data = await res.json();
+    const result: LookupOutcome = {
+      synopsis: data.summary ? stripHtml(data.summary) : null,
+      director: data._embedded?.cast?.[0]?.person?.name || null,
+      stop: !!data.summary,
+    };
+    // Fuzzy text search by the (possibly wrong) stored title — year/cover
+    // only trusted when TVMaze's own result title matches what we searched.
+    if (isConfidentMatch(title, data.name)) {
+      if (data.premiered) {
+        const parsed = parseInt(String(data.premiered).slice(0, 4), 10);
+        if (!Number.isNaN(parsed)) result.year = parsed;
+      }
+      if (data.image?.original || data.image?.medium) {
+        result.cover = data.image.original || data.image.medium;
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error("TVMaze summary error:", e);
+    return { stop: false };
+  }
+}
+
+async function lookupOmdbByTitle(title: string): Promise<LookupOutcome> {
+  const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
+  if (!apiKey) return { stop: false };
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&plot=full&apikey=${apiKey}`);
+    if (!res.ok) return { stop: false };
+    const data = await res.json();
+    const result: LookupOutcome = {
+      director: data.Director && data.Director !== "N/A" ? data.Director : null,
+      stop: false,
+    };
+    // OMDb's "?t=" is an approximate title search, not an id lookup — same
+    // fuzzy-match caveat as TVMaze above.
+    if (isConfidentMatch(title, data.Title)) {
+      if (data.Year) {
+        const parsed = parseInt(String(data.Year).slice(0, 4), 10);
+        if (!Number.isNaN(parsed)) result.year = parsed;
+      }
+      if (data.Poster && data.Poster !== "N/A") result.cover = data.Poster;
+    }
+    if (data.Plot && data.Plot !== "N/A") {
+      result.synopsis = data.Plot;
+      result.stop = true;
+    }
+    return result;
+  } catch (e) {
+    console.error("OMDb plot error:", e);
+    return { stop: false };
+  }
+}
+
+async function lookupBooks(title: string): Promise<LookupOutcome> {
+  let synopsis: string | null = null;
+  let author: string | null = null;
+  let year: number | null = null;
+  let cover: string | null = null;
+  let descFound = false;
+
+  try {
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(title)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const desc = data.items?.[0]?.volumeInfo?.description;
+      const authors = data.items?.[0]?.volumeInfo?.authors;
+      const publishedDate = data.items?.[0]?.volumeInfo?.publishedDate;
+      const bookTitle = data.items?.[0]?.volumeInfo?.title;
+      const bookCover = data.items?.[0]?.volumeInfo?.imageLinks?.thumbnail;
+      if (authors && authors.length > 0) author = authors.join(", ");
+      // Books never get a foundTitle suggestion — only year/cover, and only
+      // when the search's own result title matches what we searched for.
+      if (isConfidentMatch(title, bookTitle)) {
+        if (publishedDate) {
+          const parsed = parseInt(String(publishedDate).slice(0, 4), 10);
+          if (!Number.isNaN(parsed)) year = parsed;
+        }
+        if (bookCover) cover = bookCover.replace(/^http:/, "https:");
+      }
+      if (desc) {
+        synopsis = desc;
+        descFound = true;
+      }
+    }
+  } catch (e) {
+    console.warn("Google Books API failed, falling back to OpenLibrary:", e);
+  }
+
+  if (!descFound) {
+    try {
+      const searchRes = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(title)}&limit=1`);
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const firstDoc = searchData.docs?.[0];
+        const workKey = firstDoc?.key;
+        const authorNames = firstDoc?.author_name;
+        if (authorNames && authorNames.length > 0) author = authorNames.join(", ");
+        if (isConfidentMatch(title, firstDoc?.title)) {
+          if (!year && firstDoc?.first_publish_year) year = firstDoc.first_publish_year;
+          if (!cover && firstDoc?.cover_i) cover = `https://covers.openlibrary.org/b/id/${firstDoc.cover_i}-M.jpg`;
+        }
+        if (workKey) {
+          const workRes = await fetch(`https://openlibrary.org${workKey}.json`);
+          if (workRes.ok) {
+            const workData = await workRes.json();
+            let desc = workData.description;
+            if (desc) {
+              if (typeof desc === "object" && desc.value) desc = desc.value;
+              synopsis = stripHtml(desc);
+              descFound = true;
+            }
+          }
+        }
+      }
+    } catch (olErr) {
+      console.error("OpenLibrary fallback failed:", olErr);
+    }
+  }
+
+  return { synopsis, author, year, cover, stop: descFound };
+}
+
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({ item, onClose, user, updateWatchItem }) => {
   const [synopsis, setSynopsis] = useState<string | null>(null);
   const [director, setDirector] = useState<string | null>(null);
@@ -114,101 +346,34 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({ item, onCl
       setSynopsis(null);
       setDirector(null);
       setAuthor(null);
-      // Tracked locally rather than via state, since several async branches
+      // Tracked locally rather than via state, since several lookup sources
       // below can each contribute a value and we want to reconcile once,
       // after the fetch settles, instead of racing partial state updates.
       let foundTitle: string | null = null;
       let foundYear: number | null = null;
       let foundCover: string | null = null;
+
       try {
         // 1. Anime (AniList)
         if (item.type === "anime" && item.anilistId) {
-          const query = `
-            query ($id: Int) {
-              Media(id: $id) {
-                description
-                startDate { year }
-                title { english romaji }
-                coverImage { large }
-                staff(limit: 8) {
-                  edges {
-                    role
-                    node { name { full } }
-                  }
-                }
-              }
-            }
-          `;
-          const data = await anilistQuery(query, { id: item.anilistId });
-          const desc = data?.data?.Media?.description;
-          if (active && desc) {
-            setSynopsis(stripHtml(desc));
-          }
-          foundYear = data?.data?.Media?.startDate?.year || null;
-          foundTitle = data?.data?.Media?.title?.english || data?.data?.Media?.title?.romaji || null;
-          foundCover = data?.data?.Media?.coverImage?.large || null;
-          // Anime director lookup
-          const staffEdges = data?.data?.Media?.staff?.edges || [];
-          const dirNode = staffEdges.find((e: any) => e.role && e.role.toLowerCase().includes("director"));
-          if (active && dirNode) {
-            setDirector(dirNode.node.name.full);
-          }
-          if (desc && active) return;
+          const r = await lookupAnime(item.anilistId);
+          if (active && r.synopsis) setSynopsis(r.synopsis);
+          if (active && r.director) setDirector(r.director);
+          if (foundTitle == null && r.title != null) foundTitle = r.title;
+          if (foundYear == null && r.year != null) foundYear = r.year;
+          if (foundCover == null && r.cover != null) foundCover = r.cover;
+          if (r.stop && active) return;
         }
 
         // 2. TV Show / Movie via Trakt Details
         if ((item.type === "movie" || item.type === "show") && item.traktId) {
           try {
-            const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
-            let omdbSucceeded = false;
-
-            // First fetch Trakt details to get the IMDb ID
-            const details = await traktRequest(user.idToken, `${item.type}s/${item.traktId}`);
-            if (active && details?.overview) {
-              setSynopsis(details.overview);
-            }
-            if (details?.year) foundYear = Number(details.year);
-            if (details?.title) foundTitle = details.title;
-            const imdbId = details?.ids?.imdb;
-
-            if (imdbId && apiKey) {
-              try {
-                const res = await fetch(`https://www.omdbapi.com/?i=${imdbId}&plot=full&apikey=${apiKey}`);
-                if (res.ok) {
-                  const data = await res.json();
-                  if (active && data.Director && data.Director !== "N/A") {
-                    setDirector(data.Director);
-                  }
-                  if (active && data.Plot && data.Plot !== "N/A" && !details?.overview) {
-                    setSynopsis(data.Plot);
-                  }
-                  if (!foundYear && data.Year) {
-                    const parsed = parseInt(String(data.Year).slice(0, 4), 10);
-                    if (!Number.isNaN(parsed)) foundYear = parsed;
-                  }
-                  if (!foundTitle && data.Title) foundTitle = data.Title;
-                  if (!foundCover && data.Poster && data.Poster !== "N/A") foundCover = data.Poster;
-                  omdbSucceeded = true;
-                }
-              } catch (e) {
-                console.error("OMDb inner search failed:", e);
-              }
-            }
-
-            if (!omdbSucceeded && active) {
-              // Try Trakt People as fallback for Director
-              try {
-                const people = await traktRequest(user.idToken, `${item.type}s/${item.traktId}/people`);
-                const directors = people?.crew?.directing
-                  ?.filter((m: any) => m.job === "Director")
-                  ?.map((m: any) => m.person?.name);
-                if (active && directors && directors.length > 0) {
-                  setDirector(directors.join(", "));
-                }
-              } catch (peopleErr) {
-                console.error("Trakt people failed:", peopleErr);
-              }
-            }
+            const r = await lookupTraktDetails(user.idToken, item.type, Number(item.traktId));
+            if (active && r.synopsis) setSynopsis(r.synopsis);
+            if (active && r.director) setDirector(r.director);
+            if (foundTitle == null && r.title != null) foundTitle = r.title;
+            if (foundYear == null && r.year != null) foundYear = r.year;
+            if (foundCover == null && r.cover != null) foundCover = r.cover;
             if (active) return;
           } catch (e) {
             console.error("Trakt details fetch error:", e);
@@ -217,148 +382,36 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({ item, onCl
 
         // 3. Fallback: TV Show TVMaze check
         if (item.type === "show") {
-          try {
-            const res = await fetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(item.title)}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (active && data.summary) {
-                setSynopsis(stripHtml(data.summary));
-              }
-              if (active && data._embedded?.cast?.[0]?.person?.name) {
-                // TVMaze creator fallback info
-                setDirector(data._embedded?.cast?.[0]?.person?.name);
-              }
-              // No foundTitle here, and year/cover only trusted if TVMaze's
-              // own result title matches what we searched for: this is a
-              // fuzzy text search by the (possibly wrong) stored title, and
-              // can return a loosely-related but different show entirely.
-              if (isConfidentMatch(item.title, data.name)) {
-                if (!foundYear && data.premiered) {
-                  const parsed = parseInt(String(data.premiered).slice(0, 4), 10);
-                  if (!Number.isNaN(parsed)) foundYear = parsed;
-                }
-                if (!foundCover && (data.image?.original || data.image?.medium)) {
-                  foundCover = data.image.original || data.image.medium;
-                }
-              }
-              if (active && data.summary) return;
-            }
-          } catch (e) {
-            console.error("TVMaze summary error:", e);
-          }
+          const r = await lookupTvMazeSummary(item.title);
+          if (active && r.synopsis) setSynopsis(r.synopsis);
+          if (active && r.director) setDirector(r.director);
+          if (foundYear == null && r.year != null) foundYear = r.year;
+          if (foundCover == null && r.cover != null) foundCover = r.cover;
+          if (r.stop && active) return;
         }
 
         // 4. Fallback: Movie/Show OMDb Plot check
-        const apiKey = process.env.NEXT_PUBLIC_IMDB_API_KEY;
-        if ((item.type === "movie" || item.type === "show") && apiKey) {
-          try {
-            const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(item.title)}&plot=full&apikey=${apiKey}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (active && data.Director && data.Director !== "N/A") {
-                setDirector(data.Director);
-              }
-              // No foundTitle, and year/cover only trusted on an exact-match
-              // title — same fuzzy-search caveat as above (this is OMDb's
-              // "?t=" approximate title search, not an id lookup, and can
-              // confidently return the wrong title, e.g. searching
-              // "Alien 3" matching a documentary called "The Making of
-              // 'Alien 3'").
-              if (isConfidentMatch(item.title, data.Title)) {
-                if (!foundYear && data.Year) {
-                  const parsed = parseInt(String(data.Year).slice(0, 4), 10);
-                  if (!Number.isNaN(parsed)) foundYear = parsed;
-                }
-                if (!foundCover && data.Poster && data.Poster !== "N/A") foundCover = data.Poster;
-              }
-              if (active && data.Plot && data.Plot !== "N/A") {
-                setSynopsis(data.Plot);
-                return;
-              }
-            }
-          } catch (e) {
-            console.error("OMDb plot error:", e);
+        if (item.type === "movie" || item.type === "show") {
+          const r = await lookupOmdbByTitle(item.title);
+          if (active && r.director) setDirector(r.director);
+          if (foundYear == null && r.year != null) foundYear = r.year;
+          if (foundCover == null && r.cover != null) foundCover = r.cover;
+          if (active && r.synopsis) {
+            setSynopsis(r.synopsis);
+            return;
           }
         }
 
         // 5. Books via Google Books API with OpenLibrary Fallback
         if (item.type === "book") {
-          let descFound = false;
-          try {
-            const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(item.title)}`);
-            if (res.ok) {
-              const data = await res.json();
-              const desc = data.items?.[0]?.volumeInfo?.description;
-              const authors = data.items?.[0]?.volumeInfo?.authors;
-              const publishedDate = data.items?.[0]?.volumeInfo?.publishedDate;
-              const bookTitle = data.items?.[0]?.volumeInfo?.title;
-              const bookCover = data.items?.[0]?.volumeInfo?.imageLinks?.thumbnail;
-              if (active && authors && authors.length > 0) {
-                setAuthor(authors.join(", "));
-              }
-              // Books never get a foundTitle suggestion: there's no id-based
-              // lookup for them at all (no stored Google Books/OpenLibrary
-              // id), only text search by the stored title, which can match
-              // the wrong book with a similar name (e.g. a sequel, a
-              // different edition, an unrelated book sharing a word). Year
-              // and cover are only trusted when the search's own result
-              // title matches what we searched for.
-              if (isConfidentMatch(item.title, bookTitle)) {
-                if (publishedDate) {
-                  const parsed = parseInt(String(publishedDate).slice(0, 4), 10);
-                  if (!Number.isNaN(parsed)) foundYear = parsed;
-                }
-                if (bookCover) foundCover = bookCover.replace(/^http:/, "https:");
-              }
-              if (desc) {
-                setSynopsis(desc);
-                descFound = true;
-              }
-            }
-          } catch (e) {
-            console.warn("Google Books API failed, falling back to OpenLibrary:", e);
+          const r = await lookupBooks(item.title);
+          if (active && r.author) setAuthor(r.author);
+          if (foundYear == null && r.year != null) foundYear = r.year;
+          if (foundCover == null && r.cover != null) foundCover = r.cover;
+          if (active && r.synopsis) {
+            setSynopsis(r.synopsis);
+            return;
           }
-
-          if (!descFound) {
-            try {
-              const searchRes = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(item.title)}&limit=1`);
-              if (searchRes.ok) {
-                const searchData = await searchRes.json();
-                const firstDoc = searchData.docs?.[0];
-                const workKey = firstDoc?.key;
-                const authorNames = firstDoc?.author_name;
-                if (active && authorNames && authorNames.length > 0) {
-                  setAuthor(authorNames.join(", "));
-                }
-                if (isConfidentMatch(item.title, firstDoc?.title)) {
-                  if (!foundYear && firstDoc?.first_publish_year) {
-                    foundYear = firstDoc.first_publish_year;
-                  }
-                  if (!foundCover && firstDoc?.cover_i) {
-                    foundCover = `https://covers.openlibrary.org/b/id/${firstDoc.cover_i}-M.jpg`;
-                  }
-                }
-                if (workKey) {
-                  const workRes = await fetch(`https://openlibrary.org${workKey}.json`);
-                  if (workRes.ok) {
-                    const workData = await workRes.json();
-                    let desc = workData.description;
-                    if (desc) {
-                      if (typeof desc === "object" && desc.value) {
-                        desc = desc.value;
-                      }
-                      setSynopsis(stripHtml(desc));
-                      descFound = true;
-                    }
-                  }
-                }
-              }
-            } catch (olErr) {
-              console.error("OpenLibrary fallback failed:", olErr);
-            }
-          }
-
-          if (descFound && active) return;
         }
 
         if (active) {
