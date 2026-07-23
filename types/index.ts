@@ -34,7 +34,7 @@ export interface Expense {
 }
 
 export type MediaType = "movie" | "show" | "anime" | "book";
-export type MediaStatus = "plan_to_watch" | "watching" | "completed" | "dropped";
+export type MediaStatus = "plan_to_watch" | "watching" | "completed" | "dropped" | "paused";
 
 export interface WatchlistItem {
   id: string;

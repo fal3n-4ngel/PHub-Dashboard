@@ -139,7 +139,7 @@ export async function GET() {
           parameters: [
             { name: "q", in: "query", required: false, description: "Free-text search query to filter watchlist items by title (partial matching)", schema: { type: "string" } },
             { name: "type", in: "query", required: false, description: "Filter by media type: 'movie', 'show', 'anime', or 'book'", schema: { type: "string", enum: ["movie", "show", "anime", "book"] } },
-            { name: "status", in: "query", required: false, description: "Filter by status: 'watching', 'plan_to_watch', 'completed', or 'dropped'", schema: { type: "string", enum: ["watching", "plan_to_watch", "completed", "dropped"] } },
+            { name: "status", in: "query", required: false, description: "Filter by status: 'watching', 'paused', 'plan_to_watch', 'completed', or 'dropped'", schema: { type: "string", enum: ["watching", "paused", "plan_to_watch", "completed", "dropped"] } },
             { name: "limit", in: "query", required: false, description: "Maximum number of items to return (default 50)", schema: { type: "integer", default: 50 } },
             { name: "offset", in: "query", required: false, description: "Offset index for pagination", schema: { type: "integer", default: 0 } },
           ],
@@ -154,7 +154,11 @@ export async function GET() {
         post: {
           operationId: "addWatchlistItem",
           summary: "Add a watchlist item",
-          description: "Add a movie, show, anime, or book to the watchlist. Check listWatchlistItems first to avoid duplicates.",
+          description:
+            "Add a movie, show, anime, or book to the watchlist. Check listWatchlistItems first to avoid duplicates. " +
+            "Use the real, official title, resolved from the user's shorthand/nickname if needed — never store what they typed verbatim unless that's already the actual title. " +
+            "Always populate 'year' — if the user doesn't state it, infer the release/publish year from your own knowledge of the title before calling this. " +
+            "It's the field that disambiguates remakes, reboots, and sequels sharing a title, so don't omit it just because the user didn't say it out loud.",
           "x-openai-isConsequential": false,
           requestBody: {
             required: true,
@@ -189,7 +193,9 @@ export async function GET() {
         post: {
           operationId: "syncWatchlist",
           summary: "Bulk sync watchlist entries",
-          description: "Sync external entries (AniList, Trakt, Letterboxd CSV, or custom LLM batches) into the watchlist with automatic deduplication.",
+          description:
+            "Sync external entries (AniList, Trakt, Letterboxd CSV, or custom LLM batches) into the watchlist with automatic deduplication. " +
+            "Include 'year' on every entry when it's determinable — it's what the dedup logic and the UI use to tell apart same-titled remakes/reboots.",
           "x-openai-isConsequential": true,
           requestBody: {
             required: true,
@@ -438,7 +444,7 @@ export async function GET() {
             id: { type: "string", description: "Unique item id — use for updates/deletes" },
             title: { type: "string" },
             type: { type: "string", enum: ["movie", "show", "anime", "book"] },
-            status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"] },
+            status: { type: "string", enum: ["plan_to_watch", "watching", "paused", "completed", "dropped"] },
             progress: { type: "integer", description: "Episodes watched (0 for movies)" },
             totalEpisodes: { type: ["integer", "null"] },
             rating: { type: ["number", "null"], description: "User rating out of 10" },
@@ -451,14 +457,27 @@ export async function GET() {
           type: "object",
           required: ["title", "type", "status"],
           properties: {
-            title: { type: "string", maxLength: 300, examples: ["Frieren: Beyond Journey's End"] },
+            title: {
+              type: "string",
+              maxLength: 300,
+              description:
+                "The actual, official title — not the user's shorthand, nickname, or a paraphrase. Resolve casual references (e.g. \"dune 2\", \"got\") to their real title (\"Dune: Part Two\", \"Game of Thrones\") before sending.",
+              examples: ["Frieren: Beyond Journey's End"],
+            },
             type: { type: "string", enum: ["movie", "show", "anime", "book"] },
-            status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"], description: "Use plan_to_watch unless told otherwise" },
+            status: { type: "string", enum: ["plan_to_watch", "watching", "paused", "completed", "dropped"], description: "Use plan_to_watch unless told otherwise" },
             progress: { type: "integer", minimum: 0, default: 0, description: "Episodes already watched" },
             totalEpisodes: { type: ["integer", "null"], minimum: 0 },
             rating: { type: ["number", "null"], minimum: 0, maximum: 10 },
             coverImage: { type: ["string", "null"], description: "Cover image URL (http/https)" },
-            year: { type: ["integer", "null"], minimum: 1800, maximum: 2200 },
+            year: {
+              type: ["integer", "null"],
+              minimum: 1800,
+              maximum: 2200,
+              description:
+                "Release year (publish year for books). Strongly recommended on every create — infer it from your own knowledge of the title if the user didn't say it. Disambiguates remakes/reboots/sequels sharing a title.",
+              examples: [2024],
+            },
           },
         },
         WatchlistItemPatch: {
@@ -467,12 +486,12 @@ export async function GET() {
           properties: {
             title: { type: "string", maxLength: 300 },
             type: { type: "string", enum: ["movie", "show", "anime", "book"] },
-            status: { type: "string", enum: ["plan_to_watch", "watching", "completed", "dropped"] },
+            status: { type: "string", enum: ["plan_to_watch", "watching", "paused", "completed", "dropped"] },
             progress: { type: "integer", minimum: 0, description: "Episodes watched" },
             totalEpisodes: { type: ["integer", "null"], minimum: 0 },
             rating: { type: ["number", "null"], minimum: 0, maximum: 10 },
             coverImage: { type: ["string", "null"] },
-            year: { type: ["integer", "null"], minimum: 1800, maximum: 2200 },
+            year: { type: ["integer", "null"], minimum: 1800, maximum: 2200, description: "Release/publish year. Fix this if the stored value is missing or wrong." },
           },
         },
         SubscriptionEntry: {

@@ -48,6 +48,13 @@ service cloud.firestore {
                          && request.auth.uid == userId;
     }
 
+    // Single dashboard-settings doc per user, keyed by uid (timeFilter,
+    // salaryDay, and other lightweight UI preferences).
+    match /settings/{userId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
     // Legacy per-item watchlist collection: readable by its owner so the
     // one-time lazy migration can run; no new writes are ever allowed.
     match /watchlist/{itemId} {

@@ -38,7 +38,14 @@ export async function pushWatchlistUpdate(
           variables.score = Number(finalItem.rating);
         }
 
-        await anilistQuery(query, variables, anilistToken);
+        const result = await anilistQuery(query, variables, anilistToken);
+        // AniList returns HTTP 200 even when a mutation fails at the
+        // GraphQL layer (expired auth scope, invalid mediaId, etc.) — the
+        // failure only shows up in the response body's `errors` array, so a
+        // successful fetch() alone doesn't mean the update actually landed.
+        if (result?.errors?.length) {
+          throw new Error(result.errors.map((e: any) => e.message).join("; "));
+        }
         console.log(`Successfully pushed AniList update for: ${item.title}`);
       } catch (err) {
         console.error("Failed to push update to AniList:", err);
@@ -60,18 +67,36 @@ export async function pushWatchlistUpdate(
               body: { movies: [{ ids: { trakt: Number(item.traktId) } }] },
             });
           } else {
-            // For shows, sync episodes 1 to progress in history
-            const progressCount = finalItem.progress || 1;
-            const episodes = Array.from({ length: progressCount }, (_, i) => ({ number: i + 1 }));
+            // Mark every episode across every real season as watched.
+            // Previously this assumed a single season and sliced episode
+            // numbers 1..progress out of it — wrong for any multi-season
+            // show, since a flat episode count doesn't map onto season
+            // boundaries (e.g. progress=25 on a 3-season show would try to
+            // mark episodes 11-25 of a season that might only have 10,
+            // which Trakt rejects/ignores — exactly the "completed, but
+            // Trakt never updates" symptom). Fetch the show's actual
+            // season/episode structure instead of guessing.
+            let seasons: { number: number; episodes: { number: number }[] }[] = [];
+            try {
+              const seasonsData = await traktRequest(idToken, `shows/${item.traktId}/seasons?extended=episodes`, { token: traktAccessToken });
+              seasons = (Array.isArray(seasonsData) ? seasonsData : [])
+                .filter((s: any) => s.number > 0 && Array.isArray(s.episodes) && s.episodes.length > 0)
+                .map((s: any) => ({ number: s.number, episodes: s.episodes.map((e: any) => ({ number: e.number })) }));
+            } catch (seasonErr) {
+              console.error("Failed to fetch Trakt season data:", seasonErr);
+            }
+
             await traktRequest(idToken, "sync/history", {
               method: "POST",
               token: traktAccessToken,
               body: {
                 shows: [
-                  {
-                    ids: { trakt: Number(item.traktId) },
-                    seasons: [{ number: 1, episodes }],
-                  },
+                  seasons.length > 0
+                    ? { ids: { trakt: Number(item.traktId) }, seasons }
+                    // Season data unavailable — mark the show watched
+                    // without episode-level detail rather than guessing
+                    // wrong episode numbers.
+                    : { ids: { trakt: Number(item.traktId) } },
                 ],
               },
             });

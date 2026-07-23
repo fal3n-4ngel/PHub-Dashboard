@@ -124,10 +124,10 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
     document.body.removeChild(link);
   };
 
-  const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "plan_to_watch" | "completed">("all");
+  const [statusFilter, setStatusFilter] = React.useState<"all" | "watching" | "paused" | "plan_to_watch" | "completed">("all");
   const [activeCategoryTab, setActiveCategoryTab] = React.useState<"movie" | "show" | "anime">("movie");
   const [titleSearch, setTitleSearch] = React.useState("");
-  const [sortBy, setSortBy] = React.useState<"title" | "rating" | "year">("title");
+  const [sortBy, setSortBy] = React.useState<"title" | "rating" | "year">("year");
 
   // Category tab is now a strict 3-way split: Movies / TV Shows / Anime each
   // show only their own type — no more combined "Movies & Shows" bucket.
@@ -437,6 +437,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                     [
                       { id: "all", label: "All" },
                       { id: "watching", label: "👁️ Watching" },
+                      { id: "paused", label: "⏸️ Paused" },
                       { id: "plan_to_watch", label: "⏳ Plan" },
                       { id: "completed", label: "✅ Done" },
                     ] as const
@@ -526,6 +527,7 @@ export const WatchlistTab: React.FC<WatchlistTabProps> = ({
                     className="cursor-pointer rounded-md border border-border-subtle bg-white px-2 py-1 text-[11px] max-md:flex-1 max-md:min-w-0"
                   >
                     <option value="watching">Watching</option>
+                    <option value="paused">Paused</option>
                     <option value="plan_to_watch">Plan</option>
                     <option value="completed">Completed</option>
                     <option value="dropped">Dropped</option>

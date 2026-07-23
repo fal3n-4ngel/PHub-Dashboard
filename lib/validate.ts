@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto";
 import { ApiError } from "./errors";
-import type { ExpenseEntry, InvestmentAsset, SubscriptionEntry, SubscriptionRecord, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
+import type { DashboardSettings, ExpenseEntry, InvestmentAsset, SubscriptionEntry, SubscriptionRecord, SyncEntry, SyncSource, WatchlistItem } from "./firebase";
 
 const MEDIA_TYPES = ["movie", "show", "anime", "book"] as const;
-const MEDIA_STATUSES = ["plan_to_watch", "watching", "completed", "dropped"] as const;
+const MEDIA_STATUSES = ["plan_to_watch", "watching", "completed", "dropped", "paused"] as const;
 const BILLING_CYCLES = ["monthly", "yearly"] as const;
 const ASSET_CATEGORIES = ["equity", "crypto", "mutual_fund", "sip", "gold", "cash", "other"] as const;
+const TIME_FILTERS = ["7", "30", "90", "salary", "all"] as const;
 
 export const MAX_PORTFOLIO_ASSETS = 500;
 
@@ -217,6 +218,21 @@ export function validateSubscriptionPatch(body: unknown): Partial<Omit<Subscript
   if (b.icon !== undefined) patch.icon = asTrimmedString(b.icon, "icon", 10, false) ?? null;
   if (Object.keys(patch).length === 0) {
     badRequest("Patch body must include at least one of: name, cost, billingCycle, nextBillingDate, icon.");
+  }
+  return patch;
+}
+
+/* ─── Dashboard Settings ─── */
+
+// Whitelists patchable fields — arbitrary keys in the body are dropped
+// rather than written to Firestore.
+export function validateSettingsPatch(body: unknown): Partial<Omit<DashboardSettings, "updatedAt">> {
+  const b = requireObject(body, "Settings patch");
+  const patch: Partial<Omit<DashboardSettings, "updatedAt">> = {};
+  if (b.timeFilter !== undefined) patch.timeFilter = asEnum(b.timeFilter, "timeFilter", TIME_FILTERS, true)!;
+  if (b.salaryDay !== undefined) patch.salaryDay = asNumber(b.salaryDay, "salaryDay", { min: 1, max: 31, integer: true });
+  if (Object.keys(patch).length === 0) {
+    badRequest("Patch body must include at least one of: timeFilter, salaryDay.");
   }
   return patch;
 }

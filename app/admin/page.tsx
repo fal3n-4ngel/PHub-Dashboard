@@ -353,7 +353,7 @@ export default function AdminPage() {
                     <div key={gptUser.email} className="flex justify-between items-center rounded border border-border-subtle bg-bg-primary/20 p-2.5">
                       <div className="text-[12px] font-medium text-text-primary truncate max-w-[200px]">{gptUser.email}</div>
                       <div className="text-[10px] text-text-secondary">
-                        Last Active: {gptUser.lastActive ? new Date(gptUser.lastActive).toLocaleDateString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "Never"}
+                        Last Active: {gptUser.lastActive ? new Date(gptUser.lastActive).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "Never"}
                       </div>
                     </div>
                   ))}

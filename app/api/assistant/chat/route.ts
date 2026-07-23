@@ -90,7 +90,7 @@ const functionDeclarations: FunctionDeclaration[] = [
       properties: {
         title: { type: SchemaType.STRING, description: "Title of the media" },
         type: { type: SchemaType.STRING, description: "Type of media (movie, show, anime, book)" },
-        status: { type: SchemaType.STRING, description: "Status (plan_to_watch, watching, completed, dropped). Default is 'plan_to_watch'" },
+        status: { type: SchemaType.STRING, description: "Status (plan_to_watch, watching, paused, completed, dropped). Default is 'plan_to_watch'" },
         progress: { type: SchemaType.INTEGER, description: "Current episode or page progress" },
         totalEpisodes: { type: SchemaType.INTEGER, description: "Total episodes/pages if known" },
         rating: { type: SchemaType.NUMBER, description: "User rating out of 10" }
@@ -105,7 +105,7 @@ const functionDeclarations: FunctionDeclaration[] = [
       type: SchemaType.OBJECT,
       properties: {
         id: { type: SchemaType.STRING, description: "Item ID" },
-        status: { type: SchemaType.STRING, description: "Status (plan_to_watch, watching, completed, dropped)" },
+        status: { type: SchemaType.STRING, description: "Status (plan_to_watch, watching, paused, completed, dropped)" },
         progress: { type: SchemaType.INTEGER },
         rating: { type: SchemaType.NUMBER, description: "Rating out of 10" }
       },

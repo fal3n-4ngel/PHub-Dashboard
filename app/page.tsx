@@ -24,6 +24,7 @@ import LandingPage from "@/components/landing/LandingPage";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { MobileHeader } from "@/components/dashboard/MobileHeader";
 import { ConfirmModal, ConfirmState } from "@/components/dashboard/ConfirmModal";
+import { SyncPreviewModal, SyncPreviewState, SyncPreviewItem } from "@/components/dashboard/SyncPreviewModal";
 import { OnboardingModal } from "@/components/dashboard/OnboardingModal";
 import { ExpensesTab } from "@/components/dashboard/ExpensesTab";
 import { SubscriptionsTab } from "@/components/dashboard/SubscriptionsTab";
@@ -72,8 +73,21 @@ export default function Dashboard() {
   const [isAddingExpense, setIsAddingExpense] = useState(false);
 
   // Filters & Analytics
-  const [timeFilter, setTimeFilter] = useState<"7" | "30" | "90" | "salary" | "all">("all");
-  const [salaryDay, setSalaryDay] = useState<number>(1);
+  // Seeded from a localStorage cache so the dashboard renders with the
+  // user's last-known preference instantly instead of flashing back to the
+  // "all" default while the Firestore-backed /api/settings fetch is in
+  // flight; fetchSettings() below reconciles against the server copy once
+  // it lands (and keeps the cache in sync across devices).
+  const [timeFilter, setTimeFilterState] = useState<"7" | "30" | "90" | "salary" | "all">(() => {
+    if (typeof window === "undefined") return "all";
+    const cached = window.localStorage.getItem("phub_time_filter");
+    return cached === "7" || cached === "30" || cached === "90" || cached === "salary" || cached === "all" ? cached : "all";
+  });
+  const [salaryDay, setSalaryDayState] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const cached = parseInt(window.localStorage.getItem("phub_salary_day") || "", 10);
+    return cached >= 1 && cached <= 31 ? cached : 1;
+  });
   const [activeChart, setActiveChart] = useState<"category" | "trend">("category");
   const [expenseSearch, setExpenseSearch] = useState("");
   const [ledgerCategoryFilter, setLedgerCategoryFilter] = useState("");
@@ -156,6 +170,13 @@ export default function Dashboard() {
     isOpen: false,
     title: "",
     message: "",
+    onConfirm: () => {},
+  });
+  const [syncPreview, setSyncPreview] = useState<SyncPreviewState>({
+    isOpen: false,
+    title: "",
+    newItems: [],
+    updatedItems: [],
     onConfirm: () => {},
   });
 
@@ -265,6 +286,47 @@ export default function Dashboard() {
   const [isSyncingAnilist, setIsSyncingAnilist] = useState(false);
   const [isSyncingTrakt, setIsSyncingTrakt] = useState(false);
 
+  // Shared by every sync source (AniList/Trakt/Letterboxd): compares the
+  // entries about to be pushed against the current watchlist so we can show
+  // the user a real new-vs-updated breakdown before anything is written,
+  // rather than only reporting a count after the fact.
+  const describeSyncChanges = (existing: WatchlistItem, e: SyncEntry): string[] => {
+    const changes: string[] = [];
+    if (existing.status !== e.status) {
+      changes.push(`Status: ${existing.status.replace(/_/g, " ")} → ${e.status.replace(/_/g, " ")}`);
+    }
+    if ((existing.progress || 0) !== (e.progress || 0)) {
+      changes.push(`Progress: ${existing.progress || 0} → ${e.progress || 0}`);
+    }
+    if ((existing.rating ?? null) !== (e.rating ?? null)) {
+      changes.push(`Rating: ${existing.rating ?? "—"} → ${e.rating ?? "—"}`);
+    }
+    if (!existing.coverImage && e.coverImage) {
+      changes.push("Cover image added");
+    }
+    if (existing.year == null && e.year != null) {
+      changes.push(`Year added: ${e.year}`);
+    }
+    return changes;
+  };
+
+  const diffSyncEntries = (entries: SyncEntry[], matchExisting: (e: SyncEntry) => WatchlistItem | undefined) => {
+    const newItems: SyncPreviewItem[] = [];
+    const updatedItems: SyncPreviewItem[] = [];
+    for (const e of entries) {
+      const existing = matchExisting(e);
+      if (!existing) {
+        newItems.push({ title: e.title, type: e.type, changes: [] });
+        continue;
+      }
+      const changes = describeSyncChanges(existing, e);
+      if (changes.length > 0) {
+        updatedItems.push({ title: e.title, type: e.type, changes });
+      }
+    }
+    return { newItems, updatedItems, newCount: newItems.length, updatedCount: updatedItems.length };
+  };
+
   const syncAnilist = async () => {
     if (!anilistUser?.token) {
       connectAnilist();
@@ -309,7 +371,7 @@ export default function Dashboard() {
           if (entry.status === "CURRENT") status = "watching";
           else if (entry.status === "COMPLETED") status = "completed";
           else if (entry.status === "DROPPED") status = "dropped";
-          else if (entry.status === "PAUSED") status = "watching";
+          else if (entry.status === "PAUSED") status = "paused";
 
           const title = media.title?.english || media.title?.romaji || "Untitled Anime";
           entries.push({
@@ -326,22 +388,47 @@ export default function Dashboard() {
         }
       }
 
-      if (entries.length > 0) {
-        const res = await fetch("/api/watchlist/sync", {
-          method: "POST",
-          headers: getHeaders(),
-          body: JSON.stringify({ source: "anilist", entries }),
-        });
-        if (res.ok) {
-          const result = await res.json();
-          await fetchWatchlist();
-          triggerAlert("AniList Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated anime titles!`, "success");
-        } else {
-          throw new Error("Server rejected sync payload.");
-        }
-      } else {
+      if (entries.length === 0) {
         triggerAlert("AniList Sync", "No anime items found in your AniList account.", "info");
+        return;
       }
+
+      const { newItems, updatedItems, newCount, updatedCount } = diffSyncEntries(entries, (e) =>
+        watchlist.find((w) => (w.anilistId && w.anilistId === e.anilistId) || (w.type === "anime" && w.title.toLowerCase().trim() === e.title.toLowerCase().trim()))
+      );
+
+      if (newCount === 0 && updatedCount === 0) {
+        triggerAlert("AniList Sync", "Your library already matches AniList — nothing to sync.", "info");
+        return;
+      }
+
+      const applyAnilistSync = async () => {
+        setSyncPreview((prev) => ({ ...prev, isApplying: true }));
+        setIsSyncingAnilist(true);
+        try {
+          const res = await fetch("/api/watchlist/sync", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ source: "anilist", entries }),
+          });
+          if (res.ok) {
+            const result = await res.json();
+            await fetchWatchlist();
+            setSyncPreview((prev) => ({ ...prev, isOpen: false }));
+            triggerAlert("AniList Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated anime titles!`, "success");
+          } else {
+            throw new Error("Server rejected sync payload.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          triggerAlert("AniList Sync Error", err?.message || "Failed to sync with AniList.", "danger");
+        } finally {
+          setIsSyncingAnilist(false);
+          setSyncPreview((prev) => ({ ...prev, isApplying: false }));
+        }
+      };
+
+      setSyncPreview({ isOpen: true, title: "Sync AniList", newItems, updatedItems, onConfirm: applyAnilistSync });
     } catch (err: any) {
       console.error(err);
       triggerAlert("AniList Sync Error", err?.message || "Failed to sync with AniList.", "danger");
@@ -438,7 +525,10 @@ export default function Dashboard() {
           entries.push({
             title: item.movie.title,
             type: "movie",
-            status: "plan_to_watch",
+            // Being on Trakt's watchlist doesn't override a "dropped" or
+            // "paused" you set locally without removing it from Trakt's
+            // list too.
+            status: existing?.status === "dropped" ? "dropped" : existing?.status === "paused" ? "paused" : "plan_to_watch",
             progress: 0,
             totalEpisodes: 1,
             rating: item.rating ? Number(item.rating) : null,
@@ -474,10 +564,46 @@ export default function Dashboard() {
               (w.title.toLowerCase().trim() === item.show.title.toLowerCase().trim() && w.type === "show")
           );
 
-          const totalEpisodes = existing?.totalEpisodes || null;
+          // Trakt's basic watched-shows response doesn't include a total
+          // episode count, so when we don't already know it locally, look
+          // it up directly rather than silently falling back to "watching"
+          // regardless of how much was actually watched (that fallback was
+          // reverting shows correctly marked completed back to watching on
+          // every re-sync).
+          let totalEpisodes = existing?.totalEpisodes || null;
+          if (!totalEpisodes && traktId) {
+            try {
+              const showDetails = await traktRequest(idToken, `shows/${traktId}?extended=full`, { token: traktUser.accessToken });
+              if (showDetails?.aired_episodes) {
+                totalEpisodes = Number(showDetails.aired_episodes);
+              }
+            } catch (err) {
+              console.error("Failed to fetch show episode count:", err);
+            }
+          }
+
           let status: WatchlistItem["status"] = "watching";
           if (totalEpisodes && totalEpisodes > 0 && progress >= totalEpisodes) {
             status = "completed";
+          } else if (!totalEpisodes && existing?.status === "completed" && progress >= (existing.progress || 0)) {
+            // Still couldn't determine a total — trust the existing
+            // completed status rather than reverting it, since the local
+            // mark (or an earlier push to Trakt) is at least as likely to
+            // be correct as an absent episode count.
+            status = "completed";
+          } else if (existing?.status === "dropped" && progress <= (existing.progress || 0)) {
+            // Trakt has no "dropped" concept — a show you dropped partway
+            // through still shows up here with whatever watch history
+            // already existed, which this block would otherwise read back
+            // as "watching" on every sync. Preserve the local "dropped"
+            // mark unless Trakt shows *more* progress than we already knew
+            // about (i.e. you actually went back and kept watching).
+            status = "dropped";
+          } else if (existing?.status === "paused" && progress <= (existing.progress || 0)) {
+            // Trakt has no "paused" concept either — same problem as
+            // "dropped" above. Preserve the local "paused" mark unless
+            // Trakt shows more progress than we already knew about.
+            status = "paused";
           }
 
           let coverImage = existing?.coverImage || null;
@@ -544,7 +670,9 @@ export default function Dashboard() {
           entries.push({
             title: item.show.title,
             type: "show",
-            status: "plan_to_watch",
+            // Same as movies above: don't let "still on Trakt's watchlist"
+            // override a local "dropped" or "paused" mark.
+            status: existing?.status === "dropped" ? "dropped" : existing?.status === "paused" ? "paused" : "plan_to_watch",
             progress: 0,
             totalEpisodes: existing?.totalEpisodes || null,
             rating: item.rating ? Number(item.rating) : null,
@@ -555,22 +683,47 @@ export default function Dashboard() {
         }
       }
 
-      if (entries.length > 0) {
-        const res = await fetch("/api/watchlist/sync", {
-          method: "POST",
-          headers: getHeaders(),
-          body: JSON.stringify({ source: "trakt", entries }),
-        });
-        if (res.ok) {
-          const result = await res.json();
-          await fetchWatchlist();
-          triggerAlert("Trakt Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated movies & shows!`, "success");
-        } else {
-          throw new Error("Server rejected sync payload.");
-        }
-      } else {
+      if (entries.length === 0) {
         triggerAlert("Trakt Sync", "No watched items found in your Trakt account.", "info");
+        return;
       }
+
+      const { newItems, updatedItems, newCount, updatedCount } = diffSyncEntries(entries, (e) =>
+        watchlist.find((w) => w.type === e.type && ((w.traktId && w.traktId === e.traktId) || w.title.toLowerCase().trim() === e.title.toLowerCase().trim()))
+      );
+
+      if (newCount === 0 && updatedCount === 0) {
+        triggerAlert("Trakt Sync", "Your library already matches Trakt — nothing to sync.", "info");
+        return;
+      }
+
+      const applyTraktSync = async () => {
+        setSyncPreview((prev) => ({ ...prev, isApplying: true }));
+        setIsSyncingTrakt(true);
+        try {
+          const res = await fetch("/api/watchlist/sync", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ source: "trakt", entries }),
+          });
+          if (res.ok) {
+            const result = await res.json();
+            await fetchWatchlist();
+            setSyncPreview((prev) => ({ ...prev, isOpen: false }));
+            triggerAlert("Trakt Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated movies & shows!`, "success");
+          } else {
+            throw new Error("Server rejected sync payload.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          triggerAlert("Trakt Sync Error", err?.message || "Failed to sync with Trakt.", "danger");
+        } finally {
+          setIsSyncingTrakt(false);
+          setSyncPreview((prev) => ({ ...prev, isApplying: false }));
+        }
+      };
+
+      setSyncPreview({ isOpen: true, title: "Sync Trakt", newItems, updatedItems, onConfirm: applyTraktSync });
     } catch (err: any) {
       console.error(err);
       triggerAlert("Trakt Sync Error", err?.message || "Failed to sync with Trakt.", "danger");
@@ -877,6 +1030,46 @@ export default function Dashboard() {
     }
   };
 
+  // Reconciles the localStorage-seeded timeFilter/salaryDay against the
+  // Firestore copy (source of truth across devices) once auth is ready.
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch("/api/settings", { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.timeFilter) {
+          setTimeFilterState(data.timeFilter);
+          localStorage.setItem("phub_time_filter", data.timeFilter);
+        }
+        if (data.salaryDay) {
+          setSalaryDayState(data.salaryDay);
+          localStorage.setItem("phub_salary_day", String(data.salaryDay));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Write-through setters: update local state + the localStorage cache
+  // immediately (instant UI, no network wait), then persist to Firestore
+  // in the background so the preference follows the user across devices.
+  const setTimeFilter = (f: "7" | "30" | "90" | "salary" | "all") => {
+    setTimeFilterState(f);
+    localStorage.setItem("phub_time_filter", f);
+    if (user) {
+      fetch("/api/settings", { method: "PATCH", headers: getHeaders(), body: JSON.stringify({ timeFilter: f }) }).catch((err) => console.error(err));
+    }
+  };
+
+  const setSalaryDay = (d: number) => {
+    setSalaryDayState(d);
+    localStorage.setItem("phub_salary_day", String(d));
+    if (user) {
+      fetch("/api/settings", { method: "PATCH", headers: getHeaders(), body: JSON.stringify({ salaryDay: d }) }).catch((err) => console.error(err));
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchExpenses();
@@ -884,6 +1077,7 @@ export default function Dashboard() {
       fetchSubscriptions();
       fetchNote();
       fetchInvestments();
+      fetchSettings();
     }
   }, [user]);
 
@@ -1113,22 +1307,43 @@ export default function Dashboard() {
         throw new Error("No recent watched diary entries found in this Letterboxd feed.");
       }
 
-      triggerConfirm("Sync Letterboxd", `Found ${movies.length} movies in your Letterboxd RSS feed. Sync them now?`, async () => {
-        const syncRes = await fetch("/api/watchlist/sync", {
-          method: "POST",
-          headers: getHeaders(),
-          body: JSON.stringify({ source: "letterboxd", entries: movies }),
-        });
-        if (syncRes.ok) {
-          const result = await syncRes.json();
-          setShowLetterboxdModal(false);
-          localStorage.setItem("letterboxd_username", letterboxdUsername.trim());
-          fetchWatchlist();
-          triggerAlert("Letterboxd Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated movies!`, "success");
-        } else {
-          throw new Error("Server rejected sync payload.");
+      const { newItems, updatedItems, newCount, updatedCount } = diffSyncEntries(movies, (e) =>
+        watchlist.find((w) => w.type === "movie" && ((w.traktId && e.traktId && w.traktId === e.traktId) || w.title.toLowerCase().trim() === e.title.toLowerCase().trim()))
+      );
+
+      if (newCount === 0 && updatedCount === 0) {
+        triggerAlert("Letterboxd Sync", "Your library already matches this Letterboxd feed — nothing to sync.", "info");
+        return;
+      }
+
+      const applyLetterboxdSync = async () => {
+        setSyncPreview((prev) => ({ ...prev, isApplying: true }));
+        setIsImportingLetterboxd(true);
+        try {
+          const syncRes = await fetch("/api/watchlist/sync", {
+            method: "POST",
+            headers: getHeaders(),
+            body: JSON.stringify({ source: "letterboxd", entries: movies }),
+          });
+          if (syncRes.ok) {
+            const result = await syncRes.json();
+            setShowLetterboxdModal(false);
+            localStorage.setItem("letterboxd_username", letterboxdUsername.trim());
+            fetchWatchlist();
+            setSyncPreview((prev) => ({ ...prev, isOpen: false }));
+            triggerAlert("Letterboxd Sync Complete", `Successfully synced ${result.added || 0} new and ${result.updated || 0} updated movies!`, "success");
+          } else {
+            throw new Error("Server rejected sync payload.");
+          }
+        } catch (err: any) {
+          triggerAlert("Sync Failed", err?.message || "Failed to sync Letterboxd feed.", "danger");
+        } finally {
+          setIsImportingLetterboxd(false);
+          setSyncPreview((prev) => ({ ...prev, isApplying: false }));
         }
-      }, false, "Sync");
+      };
+
+      setSyncPreview({ isOpen: true, title: "Sync Letterboxd", newItems, updatedItems, onConfirm: applyLetterboxdSync });
     } catch (err: any) {
       triggerAlert("Sync Failed", err?.message || "Failed to parse RSS feed", "danger");
     } finally {
@@ -1643,6 +1858,9 @@ const updateMarketPrices = async () => {
       {/* Themed Confirm & Alert Modal */}
       <ConfirmModal confirmDlg={confirmDlg} setConfirmDlg={setConfirmDlg} />
 
+      {/* Sync Preview Modal (itemized new/updated changes before applying a sync) */}
+      <SyncPreviewModal preview={syncPreview} onClose={() => setSyncPreview((prev) => ({ ...prev, isOpen: false }))} />
+
       {/* Feature Guide Onboarding Modal */}
       <OnboardingModal
         showOnboarding={showOnboarding}
@@ -1689,6 +1907,7 @@ const updateMarketPrices = async () => {
           item={selectedMediaItem}
           onClose={() => setSelectedMediaItem(null)}
           user={user}
+          updateWatchItem={updateWatchItem}
         />
       )}
 
