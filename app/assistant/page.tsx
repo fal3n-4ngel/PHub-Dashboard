@@ -57,6 +57,9 @@ export default function AssistantIntegrationPage() {
   }, []);
 
   const schemaUrl = `${origin || SITE_URL}/api/openapi.json`;
+  const poeWebhookUrl = `${origin || SITE_URL}/api/assistant/poe?key=${
+    authApi?.auth?.currentUser?.refreshToken || "YOUR_PERMANENT_API_KEY"
+  }`;
 
   async function copyText(key: string, text: string) {
     try {
@@ -187,7 +190,7 @@ Always confirm what you logged in one short line, including the year you recorde
           <div className="min-w-0 flex-1">
             <h2 className="mb-1.5 text-[15px] font-semibold">Create a Custom GPT or AI Agent</h2>
             <p className="text-[13px] leading-[1.7] text-text-secondary">
-              In your preferred LLM provider (ChatGPT Explore GPTs, Gemini Gems, or Claude Projects), initiate a new custom assistant creation. Keep sharing set to <strong>Only me</strong> — this agent will hold a token to your personal data.
+              In ChatGPT (under Explore GPTs) or your preferred AI Agent builder (e.g. Coze, Dify), initiate a new custom assistant. Keep sharing set to <strong>Only me</strong> — this agent will hold a token to your personal data.
             </p>
           </div>
         </div>
@@ -196,14 +199,24 @@ Always confirm what you logged in one short line, including the year you recorde
         <div className={`${BENTO_CARD} flex gap-4`}>
           {stepBadge(2)}
           <div className="min-w-0 flex-1">
-            <h2 className="mb-1.5 text-[15px] font-semibold">Import the API schema</h2>
+            <h2 className="mb-1.5 text-[15px] font-semibold">Import the API schema (or set up Poe webhook)</h2>
             <p className="mb-3 text-[13px] leading-[1.7] text-text-secondary">
-              In your agent&apos;s developer settings under <strong>Actions</strong> or <strong>Capabilities</strong>, choose to import a schema from a URL and paste the link below. The LLM provider will discover the expense and watchlist API actions automatically.
+              For <strong>ChatGPT Actions</strong> (Custom GPTs) or agent platforms, choose to import a schema from a URL and paste the link below:
             </p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
               <span className={CODE_CLASS}>{schemaUrl}</span>
               <button onClick={() => copyText("schema", schemaUrl)} className={`${BTN_SECONDARY} px-3 py-1.5 text-xs`}>
                 {copied === "schema" ? "✓ Copied" : "Copy URL"}
+              </button>
+            </div>
+            
+            <p className="mb-3 text-[13px] leading-[1.7] text-text-secondary border-t border-border-subtle pt-3.5">
+              For <strong>Poe Server Bots</strong>, copy the Server Webhook URL below and paste it in Poe's <strong>Server URL</strong> settings:
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={CODE_CLASS}>{poeWebhookUrl}</span>
+              <button onClick={() => copyText("poe", poeWebhookUrl)} className={`${BTN_SECONDARY} px-3 py-1.5 text-xs`}>
+                {copied === "poe" ? "✓ Copied" : "Copy Poe URL"}
               </button>
             </div>
           </div>
